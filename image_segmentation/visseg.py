@@ -4,7 +4,7 @@ import cv2
 import matplotlib.pyplot as plt
 
 # Reload the image
-image = cv2.imread(r"C:\Users\wy\Desktop\leetcode-drawing-assistant\test.png")
+image = cv2.imread(r"C:\Users\wy\Desktop\SketchMind\image_segmentation\test1.png")
 
 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 

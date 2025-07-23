@@ -4,7 +4,7 @@ import torch
 from segment_anything import sam_model_registry, SamPredictor
 
 # 加载图像
-image = cv2.imread("test.png")
+image = cv2.imread("test1.png")
 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 # 灰度 & 边缘提取

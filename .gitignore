@@ -34,8 +34,7 @@ yarn-error.log*
 .env*
 /backend/node_modules
 /backend/.env
-/image_segmentation/*.pth
-/image_segmentation/*.pt
+/image_segmentation/
 # vercel
 .vercel
 

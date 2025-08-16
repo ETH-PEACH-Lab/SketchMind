@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+/frontend/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 /backend/node_modules
 /backend/.env
-/image_segmentation/
+/frontend/image_segmentation/
 # vercel
 .vercel
 

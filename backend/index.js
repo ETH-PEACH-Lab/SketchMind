@@ -12,11 +12,11 @@
 // const fs = require('fs').promises;
 // const multer = require('multer');
 // import { GoogleGenAI } from '@google/genai';
-import { ProxyAgent, setGlobalDispatcher } from 'undici';
+// import { ProxyAgent, setGlobalDispatcher } from 'undici';
 // 127.0.0.1:7890 换成你自己的 HTTP 代理端口
-const proxy = new ProxyAgent('http://127.0.0.1:7890');
-setGlobalDispatcher(proxy);
-import { HttpsProxyAgent } from 'https-proxy-agent';
+// const proxy = new ProxyAgent('http://127.0.0.1:7890');
+// setGlobalDispatcher(proxy);
+// import { HttpsProxyAgent } from 'https-proxy-agent';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -376,5 +376,5 @@ app.post("/validate", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ backend listening on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

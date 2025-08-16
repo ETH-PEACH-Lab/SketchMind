@@ -1,0 +1,88 @@
+[
+  {
+    "step": 1,
+    "title": "Start Drawing",
+    "hint": "Let's begin! Please draw two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nUse boxes and arrows to represent the nodes and connections.",
+    "drawSuggestion": [
+      { "type": "list", "label": "list1", "nodes": [1, 2, 4], "y": 100 },
+      { "type": "list", "label": "list2", "nodes": [1, 3, 4], "y": 200 }
+    ]
+  },
+  {
+    "step": 2,
+    "title": "Compare First Nodes",
+    "hint": "Look at the heads of list1 and list2 (both are 1).\nWhich one should we choose to add to the merged list first?",
+    "highlight": ["list1-0", "list2-0"]
+  },
+  {
+    "step": 3,
+    "title": "First Merge",
+    "hint": "Now draw the merged list starting with 1 (from list2).\nThen remove this node from list2.",
+    "drawSuggestion": [
+      { "type": "mergeHead", "nodes": [1] },
+      { "type": "list", "label": "list1", "nodes": [2, 4], "y": 100 },
+      { "type": "list", "label": "list2", "nodes": [1, 3, 4], "y": 200 }
+    ]
+  },
+  {
+    "step": 4,
+    "title": "Compare Again",
+    "hint": "Compare the new heads: list1 is 1, list2 is 3.\nWhich one goes next in the merged list?",
+    "highlight": ["list1-0", "list2-0"]
+  },
+  {
+    "step": 5,
+    "title": "Continue the Merge",
+    "hint": "Add the 1 from list1 to the merged list.\nUpdate list1 to remove this node, and keep going.",
+    "drawSuggestion": [
+      { "type": "mergeHead", "nodes": [1, 1] },
+      { "type": "list", "label": "list1", "nodes": [2, 4], "y": 100 },
+      { "type": "list", "label": "list2", "nodes": [3, 4], "y": 200 }
+    ]
+  },
+  {
+    "step": 6,
+    "title": "Next Comparison",
+    "hint": "Which node is smaller: 2 (list1) or 3 (list2)?\nChoose the smaller one to add next."
+  },
+  {
+    "step": 7,
+    "title": "Keep Merging",
+    "hint": "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state.",
+    "drawSuggestion": [
+      { "type": "mergeHead", "nodes": [1, 1, 2] },
+      { "type": "list", "label": "list1", "nodes": [4], "y": 100 },
+      { "type": "list", "label": "list2", "nodes": [3, 4], "y": 200 }
+    ]
+  },
+  {
+    "step": 8,
+    "title": "Compare & Merge Again",
+    "hint": "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it.",
+    "drawSuggestion": [
+      { "type": "mergeHead", "nodes": [1, 1, 2, 3] }
+    ]
+  },
+  {
+    "step": 9,
+    "title": "Almost Done!",
+    "hint": "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4.",
+    "drawSuggestion": [
+      { "type": "mergeHead", "nodes": [1, 1, 2, 3, 4] }
+    ]
+  },
+  {
+    "step": 10,
+    "title": "Finish the Merge",
+    "hint": "Only one node left.\nLet’s connect the last node to finish the merged list.",
+    "drawSuggestion": [
+      { "type": "mergeHead", "nodes": [1, 1, 2, 3, 4, 4] }
+    ]
+  },
+  {
+    "step": 11,
+    "title": "🎉 All Done!",
+    "hint": "Great job! You've built the merged list step by step.\nCheck your drawing to make sure all nodes are included and correctly ordered.",
+    "drawSuggestion": []
+  }
+]

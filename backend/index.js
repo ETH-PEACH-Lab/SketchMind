@@ -12,9 +12,9 @@
 // const fs = require('fs').promises;
 // const multer = require('multer');
 // import { GoogleGenAI } from '@google/genai';
-import { ProxyAgent, setGlobalDispatcher } from 'undici';
-const proxy = new ProxyAgent('http://127.0.0.1:7890');
-setGlobalDispatcher(proxy);
+// import { ProxyAgent, setGlobalDispatcher } from 'undici';
+// const proxy = new ProxyAgent('http://127.0.0.1:7890');
+// setGlobalDispatcher(proxy);
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import express from 'express';
 import cors from 'cors';

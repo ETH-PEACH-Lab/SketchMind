@@ -1,8 +1,17 @@
 // utils/geminiOverlayFull.ts
-import {
-  convertToExcalidrawElements,
-  type ExcalidrawImperativeAPI,
-} from "@excalidraw/excalidraw";
+// import {
+//   convertToExcalidrawElements,
+//   type ExcalidrawImperativeAPI,
+// } from "@excalidraw/excalidraw";
+// ✅ type-only import is fine (erased at runtime)
+import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw';
+
+// type CanvasPx = { width:number; height:number; offsetX?:number; offsetY?:number };
+// type Position = { x:number; y:number };
+
+// ... your GeminiPayload / toSkeletons(...) helpers stay the same
+
+
 
 /* ============ 1. 把 Gemini 能描述的所有元素类型补齐 ============ */
 type ElemCommon = {
@@ -178,20 +187,36 @@ function toSkeletons(payload: GeminiPayload, canvas: CanvasPx, P: Position) {
 }
 
 /* ============ 5. 增量追加到 Excalidraw ============ */
-export function applyGeminiElementsToExcalidraw(
+// export function applyGeminiElementsToExcalidraw(
+//   api: ExcalidrawImperativeAPI,
+//   payload: GeminiPayload,
+//   canvas: CanvasPx,
+//   P: Position,
+// ) {
+//   if (!payload?.elements?.length) return;
+//   const skeletons = toSkeletons(payload, canvas, P);
+//   console.log('Skeletons:', skeletons)
+//   try {
+//     const newEls = convertToExcalidrawElements(skeletons);
+//     const cur = api.getSceneElements();
+//     api.updateScene({ elements: [...cur, ...newEls] });
+//   } catch (error) {
+//     console.error('Error converting skeletons to Excalidraw elements:', error);
+//   }
+// }
+export async function applyGeminiElementsToExcalidraw(
   api: ExcalidrawImperativeAPI,
   payload: GeminiPayload,
   canvas: CanvasPx,
-  P: Position,
+  offset: Position
 ) {
   if (!payload?.elements?.length) return;
-  const skeletons = toSkeletons(payload, canvas, P);
-  console.log('Skeletons:', skeletons)
-  try {
-    const newEls = convertToExcalidrawElements(skeletons);
-    const cur = api.getSceneElements();
-    api.updateScene({ elements: [...cur, ...newEls] });
-  } catch (error) {
-    console.error('Error converting skeletons to Excalidraw elements:', error);
-  }
+  if (typeof window === 'undefined') return; // guard against SSR
+
+  // 👇 dynamic import on the client only
+  const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
+
+  const skeletons = toSkeletons(payload, canvas, offset);
+  const newEls = convertToExcalidrawElements(skeletons);
+  api.updateScene({ elements: [...api.getSceneElements(), ...newEls] });
 }

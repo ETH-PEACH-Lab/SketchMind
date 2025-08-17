@@ -3,8 +3,8 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 // import StoryPlayer from '../components/StoryPlayer';
 import "@excalidraw/excalidraw/index.css"; 
 // 顶部先引入 MUI 组件
-import { IconButton, Tooltip, Box, Modal, Typography, Button } from '@mui/material'
-import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon } from '@mui/icons-material'
+import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup } from '@mui/material'
+import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book } from '@mui/icons-material'
 import { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw'
 // import { loadLibraryFromSVGImages } from "../utils/loadLibraryFromSVGImages";
 import { injectSvgImagesAsLibraryItems } from "../utils/loadLibraryFromSVGImages";
@@ -13,8 +13,13 @@ import { injectSvgImagesAsLibraryItems } from "../utils/loadLibraryFromSVGImages
 // import { applyGeminiOverlayToExcalidraw } from '../utils/geminiOverlay';
 import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../utils/geminiOverlay";
 // import { useSession } from 'next-auth/react';
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+// const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+const BACKEND_URL = 'http://localhost:4000';
 const StoryPlayer = dynamic(() => import('../components/StoryPlayer'), {
+  ssr: false
+})
+
+const ExploreMode = dynamic(() => import('../components/ExploreMode'), {
   ssr: false
 })
 
@@ -42,6 +47,9 @@ export default function Home() {
   const [isSaved, setIsSaved] = useState(false); // 添加保存状态
   const [currentStepIndex, setCurrentStepIndex] = useState(0); // 当前 step 的 index
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
+  const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
+
+  
   const steps = useMemo(
       () =>
         [
@@ -84,7 +92,10 @@ export default function Home() {
   // 初始 step 的空白场景
   useEffect(() => {
     if (!excalidrawAPI) return;
-    // 初始化第0步（若没有已存）
+    
+    console.log('🚀 初始化画布和场景');
+    
+    // 只初始化第0步，其他步骤等待用户点击时才创建
     if (!scenes[0]) {
       excalidrawAPI.updateScene({
         elements: [],
@@ -95,8 +106,58 @@ export default function Home() {
         ...prev,
         0: { elements: [], files: {}, appState: { viewBackgroundColor: "#fff" } },
       }));
+      console.log('✅ 初始化场景0完成');
     }
+    
+    // 确保 currentStepIndexRef 正确设置
+    currentStepIndexRef.current = 0;
+    console.log('📍 设置当前步骤索引为 0');
   }, [excalidrawAPI]); // eslint-disable-line
+
+  // 自动保存场景的定时器
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    
+    console.log('⏰ 启动自动保存定时器');
+    
+    // 每5秒自动保存一次场景
+    const autoSaveInterval = setInterval(() => {
+      if (excalidrawAPI && currentStepIndexRef.current !== undefined) {
+        console.log('⏰ 定时自动保存场景');
+        saveCurrentScene();
+      }
+    }, 5000);
+
+    return () => clearInterval(autoSaveInterval);
+  }, [excalidrawAPI]);
+
+  // 监听画布变化，自动保存
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    
+    // 创建一个防抖函数来避免频繁保存
+    let saveTimeout: NodeJS.Timeout;
+    const debouncedSave = () => {
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        if (excalidrawAPI && currentStepIndexRef.current !== undefined) {
+          saveCurrentScene();
+        }
+      }, 1000); // 1秒后保存
+    };
+
+    // 监听画布变化事件
+    const handleCanvasChange = () => {
+      debouncedSave();
+    };
+
+    // 这里可以添加更多的事件监听器来检测画布变化
+    // 由于Excalidraw的API限制，我们使用定时器作为备选方案
+    
+    return () => {
+      clearTimeout(saveTimeout);
+    };
+  }, [excalidrawAPI]);
 
   async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -119,48 +180,160 @@ export default function Home() {
     const elements = excalidrawAPI.getSceneElements();
     const files = excalidrawAPI.getFiles();
     const appState = excalidrawAPI.getAppState();
-    setScenes((prev) => ({
-      ...prev,
-      [idx]: { elements, files, appState },
-    }));
+    
+    console.log(`🔄 保存场景 ${idx}:`, { 
+      elementsCount: elements.length, 
+      hasFiles: Object.keys(files).length > 0 
+    });
+    
+    // 立即更新场景状态
+    setScenes((prev) => {
+      const newScenes = {
+        ...prev,
+        [idx]: { elements, files, appState },
+      };
+      console.log(`💾 场景 ${idx} 已保存，当前场景数量:`, Object.keys(newScenes).length);
+      return newScenes;
+    });
+    
+    // 返回保存的场景数据，以便立即使用
+    return { elements, files, appState };
+  };
+
+  // 清除临时元素，保留基础图形
+  const clearTemporaryElements = () => {
+    if (!excalidrawAPI) return;
+    const elements = excalidrawAPI.getSceneElements();
+    
+    // 过滤掉临时元素，保留基础图形
+    const permanentElements = elements.filter((el: any) => {
+      // 保留基础图形类型
+      if (['rectangle', 'diamond', 'ellipse', 'arrow', 'line', 'freedraw'].includes(el.type)) {
+        return true;
+      }
+      
+      // 对于文本，保留不包含临时标记的
+      if (el.type === 'text') {
+        return !el.text?.toLowerCase().includes('temp') && 
+               !el.text?.toLowerCase().includes('标注') &&
+               !el.text?.toLowerCase().includes('note');
+      }
+      
+      // 默认保留其他类型
+      return true;
+    });
+    
+    // 更新画布
+    excalidrawAPI.updateScene({
+      elements: permanentElements,
+      appState: excalidrawAPI.getAppState(),
+      collaborators: new Map(),
+      captureUpdate: 2,
+    });
+    
+    // 保存清理后的场景
+    saveCurrentScene();
   };
 
   // 切换步骤：先保存旧的，再加载新的
   const handleStepChange = (stepText: string, nextIndex: number) => {
     if (!excalidrawAPI) return;
-    // 保存旧场景
-    saveCurrentScene();
-    currentStepIndexRef.current = nextIndex;
+    
+    console.log(`🔄 切换步骤: ${currentStepIndexRef.current} -> ${nextIndex}`);
+    console.log(`📊 当前场景状态:`, scenes);
+    
+    // 保存旧场景并获取保存的数据
+    const savedScene = saveCurrentScene();
+    
+    // 立即更新场景状态，确保新场景可用
+    const currentScenes = { ...scenes };
+    if (savedScene) {
+      currentScenes[currentStepIndexRef.current] = savedScene;
+    }
+      
+    // 载入目标场景：优先使用已保存的场景，如果没有则基于上一页内容
+    let targetScene: StepScene;
+    
+    if (currentScenes[nextIndex]) {
+      // 如果目标步骤已有保存的场景，直接使用
+      console.log(`✅ 使用已保存的场景 ${nextIndex}`);
+      targetScene = currentScenes[nextIndex];
+    } else {
+      // 如果没有保存的场景，基于上一页内容创建新场景
+      console.log(`🔄 创建新场景，基于上一页 ${nextIndex - 1}`);
+      const previousScene = currentScenes[nextIndex - 1];
+      
+      if (previousScene && previousScene.elements.length > 0) {
+        console.log(`📝 上一页有 ${previousScene.elements.length} 个元素`);
+        
+        // 基于上一页内容创建新场景，但清空一些临时元素（如高亮、标注等）
+        const baseElements = previousScene.elements.filter((el: any) => {
+          // 保留基础图形，过滤掉临时标注（可以根据需要调整过滤条件）
+          const shouldKeep = el.type !== 'text' || !el.text?.includes('temp');
+          if (!shouldKeep) {
+            console.log(`🗑️ 过滤掉元素:`, el);
+          }
+          return shouldKeep;
+        });
+        
+        console.log(`✅ 保留 ${baseElements.length} 个基础元素`);
+        
+        targetScene = {
+          elements: baseElements,
+          files: previousScene.files,
+          appState: { 
+            ...previousScene.appState, 
+            viewBackgroundColor: "#fff" 
+          },
+        };
+        
+        // 立即更新场景状态
+        setScenes(prev => {
+          console.log(`💾 保存新创建的场景到索引 ${nextIndex}`);
+          return {
+            ...prev,
+            [nextIndex]: targetScene,
+          };
+        });
+      } else {
+        console.log(`⚠️ 上一页没有内容，创建空白场景`);
+        // 如果连上一页都没有，创建空白场景
+        targetScene = {
+          elements: [],
+          files: {},
+          appState: { viewBackgroundColor: "#fff" },
+        };
+      }
+    }
 
+    console.log(`🎨 更新画布，元素数量: ${targetScene.elements.length}`);
+    
+    // 更新画布
+    excalidrawAPI.updateScene({
+      elements: targetScene.elements,
+      appState: targetScene.appState,
+      collaborators: new Map(),
+      captureUpdate: 2, // NEVER；不进 undo
+    });
+    
+    // 更新当前步骤索引
+    currentStepIndexRef.current = nextIndex;
+    
     // 更新当前步骤文本
     setCurrentStepText(stepText);
     setCurrentStepIndex(nextIndex);
 
     // 保持 stepStatuses 长度一致
-  setStepStatuses((prev) => {
-    const next = Array(steps.length).fill("pending");
-    for (let i = 0; i < Math.min(prev.length, next.length); i++) next[i] = prev[i];
-    return next;
-  });
-
-    // 载入目标场景（若没有则空白）
-    const scene = scenes[nextIndex] ?? {
-      elements: [],
-      files: {},
-      appState: { viewBackgroundColor: "#fff" },
-    };
-
-    excalidrawAPI.updateScene({
-      elements: scene.elements,
-      appState: scene.appState,
-      collaborators: new Map(),
-      captureUpdate: 2, // NEVER；不进 undo
+    setStepStatuses((prev) => {
+      const next = Array(steps.length).fill("pending");
+      for (let i = 0; i < Math.min(prev.length, next.length); i++) next[i] = prev[i];
+      return next;
     });
   };
 
-  // 示例按钮：Check = 保存当前 step
+  // 示例按钮：Check = 验证当前 step
   const onCheck = async () => {
-    saveCurrentScene();
+    // 场景已经自动保存，这里只需要验证
     if (!excalidrawAPI) return
     // const { exportToBlob, exportToSvg } = await import('@excalidraw/excalidraw');
     const elements = excalidrawAPI.getSceneElements();
@@ -444,20 +617,27 @@ export default function Home() {
     // let parsed;
     try {
       console.log('payload:', data.payload);
-      applyGeminiElementsToExcalidraw(excalidrawAPI, data.payload, {
-      width: frameW,  // 这里请用你导出 PNG 的固定尺寸
-      height: frameH,
-    },{x: frameX0,  // 这里请用你导出 PNG 的固定尺寸
-      y: frameY0,});
-      setNotes(data.payload.notes);
-      setIsNotesOpen(true);
-      // parsed = validateGeminiOverlayResponse(raw);
-    } catch (e) {
-      console.error('invalid overlay json', e);
-      return;
-    }
-    // // console.log("notes:", data.notes);
-      }
+    //   applyGeminiElementsToExcalidraw(excalidrawAPI, data.payload, {
+    //   width: frameW,  
+    //   height: frameH,
+    // },{x: frameX0, 
+    //   y: frameY0,});
+         await applyGeminiElementsToExcalidraw(excalidrawAPI, data.payload, { width: frameW, height: frameH }, { x: frameX0, y: frameY0 });
+
+       // AI添加元素后自动保存场景
+       saveCurrentScene();
+       
+       setNotes(data.payload.notes);
+       setIsNotesOpen(true);
+       // parsed = validateGeminiOverlayResponse(raw);
+     } catch (e) {
+       console.error('invalid overlay json', e);
+       return;
+     }
+     // // console.log("notes:", data.notes");
+       }
+    
+
     
   return (
     <div className="flex h-screen">
@@ -492,15 +672,71 @@ export default function Home() {
           </Tooltip>
         </Box> */}
 
+        {/* Mode切换按钮 - 放在画布上 */}
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 16,
+            left: 16,
+            zIndex: 10,
+            bgcolor: 'rgba(255,255,255,0.95)',
+            borderRadius: 2,
+            boxShadow: 3,
+            p: 1,
+            border: '1px solid #e0e0e0',
+          }}
+        >
+          <Box sx={{ mb: 1, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+              MODE
+            </Typography>
+          </Box>
+          <ToggleButtonGroup
+            value={mode}
+            exclusive
+            orientation="vertical"
+            onChange={(_, newMode) => {
+              if (newMode !== null) {
+                setMode(newMode);
+                // 切换mode时重置一些状态
+                if (newMode === 'explore') {
+                  setCurrentStepText('');
+                  setCurrentStepIndex(0);
+                }
+              }
+            }}
+            size="small"
+          >
+            <ToggleButton value="story" sx={{ px: 2, py: 1 }}>
+              <Book sx={{ mr: 1, fontSize: 16 }} />
+              Story
+            </ToggleButton>
+            <ToggleButton value="explore" sx={{ px: 2, py: 1 }}>
+              <Explore sx={{ mr: 1, fontSize: 16 }} />
+              Explore
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
         <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} />
         {/* <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} /> */}
-        <StoryPlayer steps={steps} 
-        onStepChange={handleStepChange} 
-        stepStatuses={stepStatuses}
-        setStepStatuses={setStepStatuses}
-        onCheck={onCheck}
-        onNextDraw={onNextDraw}
-  />
+        
+        {/* 根据mode显示不同的组件 */}
+        {mode === 'story' ? (
+          <StoryPlayer 
+            steps={steps} 
+            onStepChange={handleStepChange} 
+            stepStatuses={stepStatuses}
+            setStepStatuses={setStepStatuses}
+            onCheck={onCheck}
+            onNextDraw={onNextDraw}
+          />
+                 ) : (
+           <ExploreMode 
+             onCheck={onCheck}
+             onNextDraw={onNextDraw}
+           />
+         )}
 
         {/* {excalidrawAPI && (
           <StoryPlayer

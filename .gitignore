@@ -2,6 +2,9 @@
 
 # dependencies
 /frontend/node_modules
+/frontend/.next/cache/webpack/client-development/*.gz
+/frontend/.next/
+
 /.pnp
 .pnp.*
 .yarn/*

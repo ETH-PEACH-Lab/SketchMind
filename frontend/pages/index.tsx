@@ -5,7 +5,8 @@ import "@excalidraw/excalidraw/index.css";
 // 顶部先引入 MUI 组件
 import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup } from '@mui/material'
 import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book } from '@mui/icons-material'
-import { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw'
+// import { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw'
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 // import { loadLibraryFromSVGImages } from "../utils/loadLibraryFromSVGImages";
 import { injectSvgImagesAsLibraryItems } from "../utils/loadLibraryFromSVGImages";
 // import { exportToBlob, exportToSvg } from '@excalidraw/excalidraw'
@@ -14,8 +15,8 @@ import { injectSvgImagesAsLibraryItems } from "../utils/loadLibraryFromSVGImages
 import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../utils/geminiOverlay";
 // import { useSession } from 'next-auth/react';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
-// const BACKEND_URL = 'http://localhost:4000';
+// const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+const BACKEND_URL = 'http://localhost:4000';
 
 const StoryPlayer = dynamic(() => import('../components/StoryPlayer'), {
   ssr: false
@@ -95,7 +96,7 @@ export default function Home() {
   useEffect(() => {
     if (!excalidrawAPI) return;
     
-    // console.log('🚀 初始化画布和场景');
+    console.log('🚀 初始化画布和场景');
     
     // 只初始化第0步，其他步骤等待用户点击时才创建
     if (!scenes[0]) {
@@ -108,24 +109,24 @@ export default function Home() {
         ...prev,
         0: { elements: [], files: {}, appState: { viewBackgroundColor: "#fff" } },
       }));
-      // console.log('✅ 初始化场景0完成');
+      console.log('✅ 初始化场景0完成');
     }
     
     // 确保 currentStepIndexRef 正确设置
     currentStepIndexRef.current = 0;
-    // console.log('📍 设置当前步骤索引为 0');
+    console.log('📍 设置当前步骤索引为 0');
   }, [excalidrawAPI]); // eslint-disable-line
 
   // 自动保存场景的定时器
   useEffect(() => {
     if (!excalidrawAPI) return;
     
-    // console.log('⏰ 启动自动保存定时器');
+    console.log('⏰ 启动自动保存定时器');
     
     // 每5秒自动保存一次场景
     const autoSaveInterval = setInterval(() => {
       if (excalidrawAPI && currentStepIndexRef.current !== undefined) {
-        // console.log('⏰ 定时自动保存场景');
+        console.log('⏰ 定时自动保存场景');
         saveCurrentScene();
       }
     }, 5000);
@@ -183,10 +184,10 @@ export default function Home() {
     const files = excalidrawAPI.getFiles();
     const appState = excalidrawAPI.getAppState();
     
-    // console.log(`🔄 保存场景 ${idx}:`, { 
-    //   elementsCount: elements.length, 
-    //   hasFiles: Object.keys(files).length > 0 
-    // });
+    console.log(`🔄 保存场景 ${idx}:`, { 
+      elementsCount: elements.length, 
+      hasFiles: Object.keys(files).length > 0 
+    });
     
     // 立即更新场景状态
     setScenes((prev) => {
@@ -194,7 +195,7 @@ export default function Home() {
         ...prev,
         [idx]: { elements, files, appState },
       };
-      // console.log(`💾 场景 ${idx} 已保存，当前场景数量:`, Object.keys(newScenes).length);
+      console.log(`💾 场景 ${idx} 已保存，当前场景数量:`, Object.keys(newScenes).length);
       return newScenes;
     });
     
@@ -241,64 +242,77 @@ export default function Home() {
   const handleStepChange = (stepText: string, nextIndex: number) => {
     if (!excalidrawAPI) return;
     
-    // console.log(`🔄 切换步骤: ${currentStepIndexRef.current} -> ${nextIndex}`);
-    // console.log(`📊 当前场景状态:`, scenes);
+    console.log(`🔄 切换步骤: ${currentStepIndexRef.current} -> ${nextIndex}`);
+    console.log(`📊 当前场景状态:`, scenes);
     
-    // 保存旧场景并获取保存的数据
-    const savedScene = saveCurrentScene();
+    // 强制保存当前场景
+    const currentElements = excalidrawAPI.getSceneElements();
+    const currentFiles = excalidrawAPI.getFiles();
+    const currentAppState = excalidrawAPI.getAppState();
     
-    // 立即更新场景状态，确保新场景可用
-    const currentScenes = { ...scenes };
-    if (savedScene) {
-      currentScenes[currentStepIndexRef.current] = savedScene;
-    }
-      
+    console.log(`🔍 当前画布元素数量: ${currentElements.length}`);
+    
+    // 直接更新场景状态，确保当前场景被保存
+    const updatedScenes = { ...scenes };
+    updatedScenes[currentStepIndexRef.current] = {
+      elements: currentElements,
+      files: currentFiles,
+      appState: currentAppState,
+    };
+    
+    console.log(`💾 强制保存当前场景 ${currentStepIndexRef.current}，元素数量: ${currentElements.length}`);
+    
     // 载入目标场景：优先使用已保存的场景，如果没有则基于上一页内容
     let targetScene: StepScene;
     
-    if (currentScenes[nextIndex]) {
+    if (updatedScenes[nextIndex]) {
       // 如果目标步骤已有保存的场景，直接使用
-      // console.log(`✅ 使用已保存的场景 ${nextIndex}`);
-      targetScene = currentScenes[nextIndex];
+      console.log(`✅ 使用已保存的场景 ${nextIndex}`);
+      targetScene = updatedScenes[nextIndex];
     } else {
       // 如果没有保存的场景，基于上一页内容创建新场景
-      // console.log(`🔄 创建新场景，基于上一页 ${nextIndex - 1}`);
-      const previousScene = currentScenes[nextIndex - 1];
+      console.log(`🔄 创建新场景，基于上一页 ${nextIndex - 1}`);
+      const previousScene = updatedScenes[nextIndex - 1];
       
-      if (previousScene && previousScene.elements.length > 0) {
-        // console.log(`📝 上一页有 ${previousScene.elements.length} 个元素`);
+      console.log(`🔍 上一页场景:`, previousScene);
+      
+      if (previousScene && previousScene.elements && previousScene.elements.length > 0) {
+        console.log(`📝 上一页有 ${previousScene.elements.length} 个元素`);
+        console.log(`📝 上一页元素详情:`, previousScene.elements);
         
         // 基于上一页内容创建新场景，但清空一些临时元素（如高亮、标注等）
         const baseElements = previousScene.elements.filter((el: any) => {
           // 保留基础图形，过滤掉临时标注（可以根据需要调整过滤条件）
           const shouldKeep = el.type !== 'text' || !el.text?.includes('temp');
           if (!shouldKeep) {
-            // console.log(`🗑️ 过滤掉元素:`, el);
+            console.log(`🗑️ 过滤掉元素:`, el);
           }
           return shouldKeep;
         });
         
-        // console.log(`✅ 保留 ${baseElements.length} 个基础元素`);
+        console.log(`✅ 保留 ${baseElements.length} 个基础元素`);
+        console.log(`✅ 保留的元素详情:`, baseElements);
         
         targetScene = {
           elements: baseElements,
-          files: previousScene.files,
+          files: previousScene.files || {},
           appState: { 
-            ...previousScene.appState, 
+            ...(previousScene.appState || {}), 
             viewBackgroundColor: "#fff" 
           },
         };
         
         // 立即更新场景状态
         setScenes(prev => {
-          // console.log(`💾 保存新创建的场景到索引 ${nextIndex}`);
+          console.log(`💾 保存新创建的场景到索引 ${nextIndex}`);
           return {
             ...prev,
             [nextIndex]: targetScene,
           };
         });
       } else {
-        // console.log(`⚠️ 上一页没有内容，创建空白场景`);
+        console.log(`⚠️ 上一页没有内容，创建空白场景`);
+        console.log(`⚠️ 上一页场景状态:`, previousScene);
         // 如果连上一页都没有，创建空白场景
         targetScene = {
           elements: [],
@@ -308,7 +322,8 @@ export default function Home() {
       }
     }
 
-    // console.log(`🎨 更新画布，元素数量: ${targetScene.elements.length}`);
+    console.log(`🎨 最终目标场景:`, targetScene);
+    console.log(`🎨 更新画布，元素数量: ${targetScene.elements.length}`);
     
     // 更新画布
     excalidrawAPI.updateScene({

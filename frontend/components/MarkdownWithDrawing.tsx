@@ -95,7 +95,8 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
       )
 
       /* 用 summary 文本作为唯一 key */
-      const key = summary?.props?.children || ''
+      // const key = summary?.props?.children || ''
+      const key = React.isValidElement(summary) ? (summary.props as any)?.children || '' : ''
       const isSelected = selectedKey === key
 
       return (

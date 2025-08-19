@@ -1,10 +1,64 @@
+### Docker Development
+
+1. **Build and run with Docker Compose**
+```bash
+docker-compose up --build
+```
+
+2. **Or build and run manually**
+```bash
+# Build image
+docker build -t sketchmind .
+
+# Run container
+docker run -p 3000:3000 -p 4000:4000 --env-file ./.env sketchmind
+```
+
+## Project Structure
+
+```
+SketchMind/
+├── frontend/                 # Next.js frontend application
+│   ├── components/          # React components
+│   ├── pages/              # Next.js pages
+│   ├── utils/              # Utility functions
+│   └── package.json
+├── backend/                 # Node.js backend API
+│   ├── routes/             # API routes
+│   ├── middleware/         # Express middleware
+│   └── package.json
+├── .env                     # Environment variables
+├── Dockerfile              # Docker configuration
+├── docker-compose.yml      # Docker Compose configuration
+└── README.md
+```
+
+## API Endpoints
+
+- `POST /api/validate` - Validate drawing against step requirements
+- `POST /api/analyze` - Analyze drawing and provide AI feedback
+
+## Development
+
+### Frontend
+- Built with Next.js 15
+- Uses Excalidraw for drawing functionality
+- Material-UI components for UI
+- TypeScript for type safety
+
+### Backend  
+- Express.js server
+- CORS enabled for cross-origin requests
+- Google Gemini AI integration
+- File upload support
+
+## Production Deployment
+
 ### Create docker-compose.yml on server
 
 Create `docker-compose.yml` in `/opt/containers/sketchmind/` directory:
 
 ```yaml
-# docker-compose up
-
 version: '3'
 services:
   sketchmind:
@@ -37,6 +91,7 @@ services:
 ```bash
 docker-compose up -d
 ```
+
 
 
 <!-- 

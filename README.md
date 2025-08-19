@@ -1,5 +1,3 @@
-### Docker Development
-
 1. **Build and run with Docker Compose**
 ```bash
 docker-compose up --build

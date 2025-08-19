@@ -56,17 +56,26 @@ export default function Home() {
   const steps = useMemo(
       () =>
         [
-          { stepText: "Let's begin! Please draw two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nUse boxes and arrows to represent the nodes and connections." },
-          { stepText: "Look at the heads of list1 and list2 (both are 1). \nWhich one should we add first? \nCircle the chosen head in red." },
-          { stepText: "Now draw the merged list starting with 1 (from list2).\nThen remove this node from list2." },
-          { stepText: "Compare the new heads: list1 is 1, list2 is 3.\nWhich one goes next in the merged list?" },
-          { stepText: "Add the 1 from list1 to the merged list.\nUpdate list1 to remove this node, and keep going." },
-          { stepText: "Which node is smaller: 2 (list1) or 3 (list2)?\nChoose the smaller one to add next." },
-          { stepText: "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state." },
-          { stepText: "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it." },
-          { stepText: "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4." },
-          { stepText: "Only one node left.\nLet’s connect the last node to finish the merged list." },
-           { stepText: "Great job! You've built the merged list step by step.\nCheck your drawing to make sure all nodes are included and correctly ordered." },
+          // { stepText: "Let's begin! Please draw two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nUse boxes and arrows to represent the nodes and connections." },
+          // { stepText: "Look at the heads of list1 and list2 (both are 1). \nWhich one should we add first? \nCircle the chosen head in red." },
+          // { stepText: "Now draw the merged list starting with 1 (from list2).\nThen remove this node from list2." },
+          // { stepText: "Compare the new heads: list1 is 1, list2 is 3.\nWhich one goes next in the merged list?" },
+          // { stepText: "Add the 1 from list1 to the merged list.\nUpdate list1 to remove this node, and keep going." },
+          // { stepText: "Which node is smaller: 2 (list1) or 3 (list2)?\nChoose the smaller one to add next." },
+          // { stepText: "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state." },
+          // { stepText: "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it." },
+          // { stepText: "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4." },
+          { stepText: "让我们开始吧！请画出两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n用方框和箭头来表示节点和连接。" },
+          { stepText: "看看链表1和链表2的头节点（都是1）。\n我们应该先添加哪一个呢？\n用红色圆圈圈出你选择的头节点。" },
+          { stepText: "现在开始画合并后的链表，从1开始（来自链表2）。\n然后从链表2中删除这个节点。" },
+          { stepText: "比较新的头节点：链表1是1，链表2是3。\n哪一个应该放在合并链表的下一个位置？" },
+          { stepText: "将链表1中的1添加到合并链表中。\n更新链表1，删除这个节点，然后继续。" },
+          { stepText: "哪个节点更小：链表1中的2还是链表2中的3？\n选择更小的那个放在下一个位置。" },
+          { stepText: "将更小的节点添加到合并链表中。\n相应地更新你的链表，并画出新的状态。" },
+          { stepText: "在链表1的4和链表2的3之间，哪一个应该放在下一个位置？\n添加后画出更新后的合并链表。" },
+          { stepText: "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。" },
+          { stepText: "只剩下一个节点了。\n让我们将最后一个节点连接起来完成合并后的链表。" },
+{ stepText: "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" }
         ] as { stepText: string }[],
       []
   );
@@ -705,7 +714,7 @@ export default function Home() {
         >
           <Box sx={{ mb: 1, textAlign: 'center' }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-              MODE
+              模式
             </Typography>
           </Box>
           <ToggleButtonGroup
@@ -726,11 +735,11 @@ export default function Home() {
           >
             <ToggleButton value="story" sx={{ px: 2, py: 1 }}>
               <Book sx={{ mr: 1, fontSize: 16 }} />
-              Story
+              故事模式
             </ToggleButton>
             <ToggleButton value="explore" sx={{ px: 2, py: 1 }}>
               <Explore sx={{ mr: 1, fontSize: 16 }} />
-              Explore
+              探索模式
             </ToggleButton>
           </ToggleButtonGroup>
         </Box>
@@ -791,7 +800,7 @@ export default function Home() {
           }}
         >
           <Typography variant="h6" component="h2">
-            Notes
+            提示
           </Typography>
           <Typography sx={{ mt: 2 }}>
             {notes}

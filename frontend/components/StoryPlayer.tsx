@@ -339,7 +339,7 @@ const renderStatusIcon = (i: number) => {
     bgcolor: '#fafafa',
   }}
 >
-    <Tooltip title="Check" placement="top">
+    <Tooltip title="检查" placement="top">
     <span>
       <IconButton
         sx={{ bgcolor: "#9fe2f3ff", color: "#fff", boxShadow: 2, '&:hover': { bgcolor: "#00d3efff" } }}
@@ -352,7 +352,7 @@ const renderStatusIcon = (i: number) => {
       </IconButton>
     </span>
   </Tooltip>
-  <Tooltip title="Hint" placement="top">
+  <Tooltip title="提示" placement="top">
     <span>
       <IconButton
         sx={{ bgcolor: "#a92cccff", color: "#fff", boxShadow: 2, '&:hover': { bgcolor: "#6d1b7b" } }}
@@ -384,8 +384,8 @@ const renderStatusIcon = (i: number) => {
     <CircularProgress color="secondary" />
     <Typography mt={2} color="text.secondary">
       {loadingType === "check"
-        ? "Checking your answer... Please wait."
-        : "AI is drawing the next step... Please wait."}
+        ? "正在检查你的答案... 请稍等。"
+        : "AI正在绘制下一步... 请稍等。"}
     </Typography>
   </Box>
 )}
@@ -410,7 +410,7 @@ const renderStatusIcon = (i: number) => {
                   }}
                   disabled={index === 0}
                 >
-                  ◀ Previous
+                  ◀ 上一步
                 </Button>
                 <Typography variant="caption" color="text.secondary">
                   {index + 1} / {steps.length}
@@ -423,7 +423,7 @@ const renderStatusIcon = (i: number) => {
                   }}
                   disabled={index === steps.length - 1}
                 >
-                  Next ▶
+                  下一步 ▶
                 </Button>
               </Stack>
             </CardContent>

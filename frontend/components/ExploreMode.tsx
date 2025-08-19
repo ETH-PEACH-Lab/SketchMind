@@ -106,10 +106,10 @@ export default function ExploreMode({
         }}
       >
         <Typography variant="h6" align="center" color="primary">
-          🚀 Explore Mode
+          🚀 探索模式
         </Typography>
         <Typography variant="body2" align="center" color="text.secondary">
-          Free drawing with AI assistance
+          自由绘画，AI助手相伴
         </Typography>
       </Box>
 
@@ -122,7 +122,7 @@ export default function ExploreMode({
         p={3}
         bgcolor="#fafafa"
       >
-        <Tooltip title="Check your drawing">
+        <Tooltip title="检查你的绘画">
           <IconButton
             sx={{ bgcolor: "#9fe2f3ff", color: "#fff", boxShadow: 2, '&:hover': { bgcolor: "#00d3efff" } }}
             onClick={handleCheck}
@@ -133,7 +133,7 @@ export default function ExploreMode({
               : <SendIcon sx={{ fontSize: 32 }} />}
           </IconButton>
         </Tooltip>
-        <Tooltip title="Get AI hint">
+        <Tooltip title="获取AI提示">
           <IconButton
             sx={{ bgcolor: "#a92cccff", color: "#fff", boxShadow: 2, '&:hover': { bgcolor: "#6d1b7b" } }}
             onClick={handleNextDraw}
@@ -163,8 +163,8 @@ export default function ExploreMode({
           <CircularProgress color="secondary" />
           <Typography mt={2} color="text.secondary">
             {loadingType === "check"
-              ? "Checking your answer... Please wait."
-              : "AI is drawing the next step... Please wait."}
+              ? "正在检查你的答案... 请稍等。"
+              : "AI正在绘制下一步... 请稍等。"}
           </Typography>
         </Box>
       )}

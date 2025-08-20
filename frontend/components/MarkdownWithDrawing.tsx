@@ -100,13 +100,14 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
       const isSelected = selectedKey === key
 
       return (
-        <details style={{ marginBottom: 12 }}>
+        <details open style={{ marginBottom: 12 }}>
           <summary
             style={{
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               userSelect: 'none',
+              listStyle: 'none', // 移除默认的箭头
             }}
           >
             {summary}

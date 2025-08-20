@@ -23,8 +23,8 @@ interface StoryPlayerProps {
   onStepChange: (stepText: string, index: number) => void;
   stepStatuses: string[];
   setStepStatuses: React.Dispatch<React.SetStateAction<string[]>>;
-  onCheck: () => void;
-  onNextDraw: () => void;
+  onCheck: () => Promise<any>;
+  onNextDraw: () => Promise<void>;
 }
 
 export default function StoryPlayer({
@@ -242,15 +242,15 @@ const hints = [
   try {
     const result = await onCheck();
     console.log("Check result:", result);
-    if (!result || typeof result.isValid !== "boolean") {
+    if (result && typeof result === 'object' && 'isValid' in result && typeof result.isValid === "boolean") {
+      setStepStatuses((prev) => {
+        const next = [...prev];
+        next[index] = result.isValid ? "correct" : "wrong";
+        return next;
+      });
+    } else {
       console.error("Invalid result from onCheck:", result);
-      return;
     }
-    setStepStatuses((prev) => {
-      const next = [...prev];
-      next[index] = result.isValid ? "correct" : "wrong";
-      return next;
-    });
   } catch (error) {
     console.error("Error in handleCheck:", error);
   } finally {
@@ -334,7 +334,7 @@ const hints = [
     {steps.map((_, i) => (
       <Tooltip key={i} title={`Step ${i + 1}`}>
         <IconButton
-          ref={el => stepRefs.current[i] = el}
+          ref={(el) => { stepRefs.current[i] = el; }}
           onClick={(e) => {
             e.stopPropagation();
             changeStep(i);
@@ -419,7 +419,7 @@ const hints = [
 </Box>
 
       {/* 内容展示区域 */}
-      <CardContent sx={{ cursor: "pointer" }} onClick={() => changeStep(index + 1)}>
+      <CardContent sx={{ cursor: "default" }}>
               <Typography variant="h6" gutterBottom>
                 {titles[index] || `Step ${index + 1}`}
               </Typography>
@@ -445,6 +445,7 @@ const hints = [
                   variant="outlined"
                   onClick={(e) => {
                     e.stopPropagation();
+                    // 只有点击下一步按钮才会初始化画布
                     changeStep(index + 1);
                   }}
                   disabled={index === steps.length - 1}

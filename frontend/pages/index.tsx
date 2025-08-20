@@ -51,6 +51,11 @@ export default function Home() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0); // 当前 step 的 index
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
   const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
+  
+  // Mode切换窗口的位置状态
+  const [modeWindowPosition, setModeWindowPosition] = useState({ x: 96, y: 16 });
+  const modeWindowDragging = useRef(false);
+  const modeWindowOffset = useRef({ x: 0, y: 0 });
 
   
   const steps = useMemo(
@@ -75,7 +80,7 @@ export default function Home() {
           { stepText: "在链表1的4和链表2的3之间，哪一个应该放在下一个位置？\n添加后画出更新后的合并链表。" },
           { stepText: "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。" },
           { stepText: "只剩下一个节点了。\n让我们将最后一个节点连接起来完成合并后的链表。" },
-{ stepText: "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" }
+          { stepText: "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" }
         ] as { stepText: string }[],
       []
   );
@@ -101,13 +106,13 @@ export default function Home() {
       });
   }, [excalidrawAPI]);
 
-  // 初始 step 的空白场景
+  // 初始 step 的空白场景 - 只初始化第0步
   useEffect(() => {
     if (!excalidrawAPI) return;
     
     console.log('🚀 初始化画布和场景');
     
-    // 只初始化第0步，其他步骤等待用户点击时才创建
+    // 只初始化第0步，其他步骤等待用户点击下一步按钮时才创建
     if (!scenes[0]) {
       excalidrawAPI.updateScene({
         elements: [],
@@ -142,6 +147,16 @@ export default function Home() {
 
     return () => clearInterval(autoSaveInterval);
   }, [excalidrawAPI]);
+
+  // 清理mode窗口拖动事件监听器
+  useEffect(() => {
+    return () => {
+      if (modeWindowDragging.current) {
+        window.removeEventListener('mousemove', handleModeWindowMouseMove);
+        window.removeEventListener('mouseup', handleModeWindowMouseUp);
+      }
+    };
+  }, []);
 
   // 监听画布变化，自动保存
   useEffect(() => {
@@ -247,6 +262,31 @@ export default function Home() {
     saveCurrentScene();
   };
 
+  // Mode切换窗口拖动处理函数
+  const handleModeWindowMouseDown = (e: React.MouseEvent) => {
+    modeWindowDragging.current = true;
+    modeWindowOffset.current = {
+      x: e.clientX - modeWindowPosition.x,
+      y: e.clientY - modeWindowPosition.y,
+    };
+    window.addEventListener('mousemove', handleModeWindowMouseMove);
+    window.addEventListener('mouseup', handleModeWindowMouseUp);
+  };
+
+  const handleModeWindowMouseMove = (e: MouseEvent) => {
+    if (!modeWindowDragging.current) return;
+    setModeWindowPosition({
+      x: e.clientX - modeWindowOffset.current.x,
+      y: e.clientY - modeWindowOffset.current.y,
+    });
+  };
+
+  const handleModeWindowMouseUp = () => {
+    modeWindowDragging.current = false;
+    window.removeEventListener('mousemove', handleModeWindowMouseMove);
+    window.removeEventListener('mouseup', handleModeWindowMouseUp);
+  };
+
   // 切换步骤：先保存旧的，再加载新的
   const handleStepChange = (stepText: string, nextIndex: number) => {
     if (!excalidrawAPI) return;
@@ -311,9 +351,9 @@ export default function Home() {
           },
         };
         
-        // 立即更新场景状态
+        // 立即更新场景状态 - 只保存当前步骤，不影响后续步骤
         setScenes(prev => {
-          console.log(`💾 保存新创建的场景到索引 ${nextIndex}`);
+          console.log(`💾 保存新创建的场景到索引 ${nextIndex}，不影响后续步骤`);
           return {
             ...prev,
             [nextIndex]: targetScene,
@@ -752,19 +792,26 @@ export default function Home() {
           </Tooltip>
         </Box> */}
 
-        {/* Mode切换按钮 - 放在画布上 */}
+        {/* Mode切换按钮 - 可拖动的窗口 */}
         <Box
           sx={{
             position: 'absolute',
-            top: 16,
-            left: 16,
+            top: modeWindowPosition.y,
+            left: modeWindowPosition.x,
             zIndex: 10,
             bgcolor: 'rgba(255,255,255,0.95)',
             borderRadius: 2,
             boxShadow: 3,
             p: 1,
             border: '1px solid #e0e0e0',
+            cursor: 'move',
+            userSelect: 'none',
+            '&:hover': {
+              bgcolor: 'rgba(255,255,255,0.98)',
+              boxShadow: 4,
+            },
           }}
+          onMouseDown={handleModeWindowMouseDown}
         >
           <Box sx={{ mb: 1, textAlign: 'center' }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>

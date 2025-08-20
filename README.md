@@ -9,7 +9,8 @@ docker-compose up --build
 docker build -t sketchmind .
 
 # Run container
-docker run -p 3000:3000 -p 4000:4000 --env-file ./.env sketchmind
+docker run -p 3000:3000 -p 4000:4000 --env-file .\.env sketchmind `
+  /bin/bash -lc "node /app/backend/index.js & cd /app/frontend && npm run dev -- -p 3000"
 ```
 
 ## Project Structure

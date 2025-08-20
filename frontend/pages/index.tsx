@@ -455,72 +455,126 @@ export default function Home() {
     return;
   }
 };
+  const selectedText = `  # 合并两个有序链表
 
-  const selectedText = `
-  # 🧠 LeetCode 21: Merge Two Sorted Lists
+  ## 问题描述
 
-  ## 📋 Problem Description
+  给定两个有序链表的头节点 \`list1\` 和 \`list2\`。
 
-  You are given the heads of two sorted linked lists \`list1\` and \`list2\`.
+  将这两个链表合并为一个**有序**链表。合并后的链表应通过将两个链表的节点**拼接**在一起形成。返回合并后的链表的头节点。
 
-  Merge the two lists into one **sorted** list. The list should be made by **splicing together** the nodes of the first two lists. Return the head of the merged linked list.
-
-  ---
-
-  ### Example
 
   \`\`\`
-  Input: list1 = [1,2,4], list2 = [1,3,4]
+  输入：list1 = [1,2,4], list2 = [1,3,4]
   \`\`\`
-
-  ### Constraints
-
-  - The number of nodes in both lists is in the range \`[0, 50]\`.
-  - \`-100 <= Node.val <= 100\`
-  - Both \`list1\` and \`list2\` are sorted in **non-decreasing order**.
 
   ---
 
   <details>
-  <summary>✅ Approach 1: Recursion</summary>
+  <summary>✅ 方法 1：递归</summary>
 
-  ### Intuition
+  ### 直觉
 
-  We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
+  我们可以递归地定义两个链表的合并操作结果如下（避免处理空链表的特殊情况）：
 
 
   list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
-  list2[0] + merge(list1, list2[1:])  otherwise
+  list2[0] + merge(list1, list2[1:])  否则
 
 
-  Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
+  即较小的链表头节点加上对剩余元素的合并结果。
 
-  ### Algorithm
+  ### 算法
 
-  We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.
+  我们直接模拟上述递归过程，首先处理边界情况。具体来说，如果 l1 或 l2 中的任意一个最初为 null，则无需合并，直接返回非空链表即可。否则，我们确定 l1 和 l2 中哪个头节点较小，并递归地将其 next 值设置为下一次合并的结果。鉴于两个链表均以 null 结尾，递归最终会终止。
 
   </details>
 
   ---
 
   <details>
-  <summary>✅ Approach 2: Iteration</summary>
+  <summary>✅ 方法 2：迭代</summary>
 
-  ### Intuition
+  ### 直觉
 
-  We can achieve the same idea via iteration by assuming that l1 is entirely less than l2 and processing the elements one-by-one, inserting elements of l2 in the necessary places in l1.
+  我们可以通过迭代实现相同的思想，假设 l1 完全小于 l2，并逐个处理元素，将 l2 的元素插入到 l1 的必要位置。
 
-  ### Algorithm
+  ### 算法
 
-  First, we set up a false "prehead" node that allows us to easily return the head of the merged list later. We also maintain a prev pointer, which points to the current node for which we are considering adjusting its next pointer. Then, we do the following until at least one of l1 and l2 points to null: if the value at l1 is less than or equal to the value at l2, then we connect l1 to the previous node and increment l1. Otherwise, we do the same, but for l2. Then, regardless of which list we connected, we increment prev to keep it one step behind one of our list heads.
+  首先，我们设置一个虚假的“prehead”节点，以便稍后轻松返回合并链表的头节点。我们还维护一个 prev 指针，指向当前正在考虑调整其 next 指针的节点。然后，我们执行以下操作，直到 l1 和 l2 中至少有一个指向 null：如果 l1 的值小于或等于 l2 的值，则将 l1 连接到前一个节点并递增 l1。否则，我们对 l2 执行相同的操作。然后，无论我们连接了哪个链表，我们都递增 prev，使其始终落后于其中一个链表头一步。
 
-  After the loop terminates, at most one of l1 and l2 is non-null. Therefore (because the input lists were in sorted order), if either list is non-null, it contains only elements greater than all of the previously-merged elements. This means that we can simply connect the non-null list to the merged list and return it.
+  循环终止后，l1 和 l2 中最多有一个非空。因此（因为输入链表是按排序顺序排列的），如果任意一个链表非空，则它只包含大于所有已合并元素的元素。这意味着我们可以简单地将非空链表连接到合并链表并返回。
 
-  To see this in action on an example, check out the animation below:
+  要查看此操作的示例，请查看下面的动画：
 
   <!-- animation-slot -->
   </details>
-  `;
+  `
+  // const selectedText = `
+  // # 🧠 LeetCode 21: Merge Two Sorted Lists
+
+  // ## 📋 Problem Description
+
+  // You are given the heads of two sorted linked lists \`list1\` and \`list2\`.
+
+  // Merge the two lists into one **sorted** list. The list should be made by **splicing together** the nodes of the first two lists. Return the head of the merged linked list.
+
+  // ---
+
+  // ### Example
+
+  // \`\`\`
+  // Input: list1 = [1,2,4], list2 = [1,3,4]
+  // \`\`\`
+
+  // ### Constraints
+
+  // - The number of nodes in both lists is in the range \`[0, 50]\`.
+  // - \`-100 <= Node.val <= 100\`
+  // - Both \`list1\` and \`list2\` are sorted in **non-decreasing order**.
+
+  // ---
+
+  // <details>
+  // <summary>✅ Approach 1: Recursion</summary>
+
+  // ### Intuition
+
+  // We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
+
+
+  // list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
+  // list2[0] + merge(list1, list2[1:])  otherwise
+
+
+  // Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
+
+  // ### Algorithm
+
+  // We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.
+
+  // </details>
+
+  // ---
+
+  // <details>
+  // <summary>✅ Approach 2: Iteration</summary>
+
+  // ### Intuition
+
+  // We can achieve the same idea via iteration by assuming that l1 is entirely less than l2 and processing the elements one-by-one, inserting elements of l2 in the necessary places in l1.
+
+  // ### Algorithm
+
+  // First, we set up a false "prehead" node that allows us to easily return the head of the merged list later. We also maintain a prev pointer, which points to the current node for which we are considering adjusting its next pointer. Then, we do the following until at least one of l1 and l2 points to null: if the value at l1 is less than or equal to the value at l2, then we connect l1 to the previous node and increment l1. Otherwise, we do the same, but for l2. Then, regardless of which list we connected, we increment prev to keep it one step behind one of our list heads.
+
+  // After the loop terminates, at most one of l1 and l2 is non-null. Therefore (because the input lists were in sorted order), if either list is non-null, it contains only elements greater than all of the previously-merged elements. This means that we can simply connect the non-null list to the merged list and return it.
+
+  // To see this in action on an example, check out the animation below:
+
+  // <!-- animation-slot -->
+  // </details>
+  // `;
   const handleNotesClose = () => {
       setIsNotesOpen(false);
     };

@@ -169,34 +169,60 @@ const renderStatusIcon = (i: number) => {
   //   return <RadioButtonUncheckedIcon sx={{ color: '#c4c4c4' }} />
   // }
 
-   const titles = [
-    'Start Drawing',
-      'Compare First Nodes',
-      'First Merge',
-      'Compare Again',
-      'Continue the Merge',
-      'Next Comparison',
-      'Keep Merging',
-      'Compare & Merge Again',
-      'Almost Done!',
-      'Finish the Merge',
-      '🎉 All Done!'
-  ];
+  //  const titles = [
+  //   'Start Drawing',
+  //     'Compare First Nodes',
+  //     'First Merge',
+  //     'Compare Again',
+  //     'Continue the Merge',
+  //     'Next Comparison',
+  //     'Keep Merging',
+  //     'Compare & Merge Again',
+  //     'Almost Done!',
+  //     'Finish the Merge',
+  //     '🎉 All Done!'
+  // ];
 
-  const hints = [
-    "Let's begin! Please draw two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nUse boxes and arrows to represent the nodes and connections.",
-      "Look at the heads of list1 and list2 (both are 1). \nWhich one should we add first? \nCircle the chosen head in red.",
-      "Now draw the merged list starting with 1 (from list2).\nThen remove this node from list2.",
-      "Compare the new heads: list1 is 1, list2 is 3.\nWhich one goes next in the merged list?",
-      "Add the 1 from list1 to the merged list.\nUpdate list1 to remove this node, and keep going.",
-      "Which node is smaller: 2 (list1) or 3 (list2)?\nChoose the smaller one to add next.",
-      "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state.",
-      "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it.",
-      "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4.",
-      "Only one node left.\nLet’s connect the last node to finish the merged list.",
-      "Great job! You've built the merged list step by step.\nCheck your drawing to make sure all nodes are included and correctly ordered."
-  ];
+  // const hints = [
+  //   "Let's begin! Please draw two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nUse boxes and arrows to represent the nodes and connections.",
+  //     "Look at the heads of list1 and list2 (both are 1). \nWhich one should we add first? \nCircle the chosen head in red.",
+  //     "Now draw the merged list starting with 1 (from list2).\nThen remove this node from list2.",
+  //     "Compare the new heads: list1 is 1, list2 is 3.\nWhich one goes next in the merged list?",
+  //     "Add the 1 from list1 to the merged list.\nUpdate list1 to remove this node, and keep going.",
+  //     "Which node is smaller: 2 (list1) or 3 (list2)?\nChoose the smaller one to add next.",
+  //     "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state.",
+  //     "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it.",
+  //     "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4.",
+  //     "Only one node left.\nLet’s connect the last node to finish the merged list.",
+  //     "Great job! You've built the merged list step by step.\nCheck your drawing to make sure all nodes are included and correctly ordered."
+  // ];
+const titles = [
+    '开始绘制',
+    '比较第一个节点',
+    '第一次合并',
+    '再次比较',
+    '继续合并',
+    '下一次比较',
+    '继续合并',
+    '比较并再次合并',
+    '快完成了！',
+    '完成合并',
+    '🎉 全部完成！'
+];
 
+const hints = [
+    "我们开始吧！请绘制两个链表：\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\n使用方框和箭头表示节点和连接。",
+    "查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用红色圈出你选择的头节点。",
+    "现在从 list2 中取出 1，开始绘制合并后的链表。\n然后从 list2 中移除这个节点。",
+    "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？",
+    "将 list1 中的 1 添加到合并后的链表中。\n更新 list1，移除这个节点，然后继续。",
+    "比较 2（list1）和 3（list2），哪一个更小？\n选择更小的那个节点，接下来添加。",
+    "将较小的节点添加到合并后的链表中。\n相应地更新你的链表，并绘制新的状态。",
+    "在 4（list1）和 3（list2）之间，哪一个应该接下来添加？\n添加后绘制更新后的合并链表。",
+    "继续！合并下一个节点。\n在选择 4 和 4 之后，绘制更新后的链表。",
+    "只剩下一个节点了。\n让我们连接最后一个节点，完成合并后的链表。",
+    "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。"
+];
   const NAV_WINDOW = 2; // 当前点前后各显示2个
 
   function getNavIndices(current: number, total: number) {

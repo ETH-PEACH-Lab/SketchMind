@@ -1,43 +1,35 @@
-# Dependencies
+# 依赖目录
 node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build outputs
-.next
-dist
+# 构建输出
 build
 out
+.next
+dist
 
-# Development files
+# 开发文件
 .git
 .gitignore
 README.md
-.env.local
-.env.development
-.env.test
+*.md
 
-# Logs
+# 日志和临时文件
 *.log
 logs
+*.tmp
+*.temp
+.cache
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage
-
-# IDE files
+# IDE文件
 .vscode
 .idea
 *.swp
 *.swo
 
-# OS generated files
+# 系统文件
 .DS_Store
 .DS_Store?
 ._*
@@ -46,7 +38,13 @@ coverage
 ehthumbs.db
 Thumbs.db
 
-# Docker files
-Dockerfile
-.dockerignore
-docker-compose.yml
+# 测试文件
+coverage
+test
+tests
+__tests__
+
+# 压缩包
+*.zip
+*.tar.gz
+*.rar

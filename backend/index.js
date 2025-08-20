@@ -177,7 +177,7 @@ SCHEMA
       }
     }
   ],
-  "notes": string                      // brief reasoning of what you added
+  "notes": string                      // brief reasoning of what you added, in chinese
 }
 
 Algorithm: We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
@@ -324,7 +324,7 @@ app.post("/validate", async (req, res) => {
           "message": string
         }
       - "isValid" should be true if the image matches the step description, otherwise false.
-      - "message" should provide a brief explanation of the result.
+      - "message" should provide a brief explanation of the result, in chinese.
     `.trim();
 
     // 调用 Google GenAI 模型

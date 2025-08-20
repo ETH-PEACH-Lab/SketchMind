@@ -1,0 +1,13 @@
+{
+  "name": "sketchmind",
+  "version": "1.0.0",
+  "description": "SketchMind - 算法绘画助手",
+  "scripts": {
+    "dev": "concurrently \"cd backend && npm start\" \"cd frontend && npm run dev\"",
+    "start": "concurrently \"cd backend && npm start\" \"cd frontend && npm start\"",
+    "install-all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -57,12 +57,14 @@ SketchMind/
 Create `docker-compose.yml` in `/opt/containers/sketchmind/` directory:
 
 ```yaml
+# docker-compose up
+
 version: '3'
 services:
   sketchmind:
     container_name: sketchmind
     # Docker will pull the image from GitHub Container Registry (GHCR)
-    image: 'ghcr.io/eth-peach-lab/sketchmind:latest'
+    image: 'ghcr.io/eth-peach-lab/sketchmind/sketchmind-server:latest'
     restart: always
     ports: []
     env_file:
@@ -76,9 +78,9 @@ services:
     # Let's Encrypt ensures HTTPS for your deployment
     environment:
       VIRTUAL_HOST: 'stage.peachlab-cntr1.inf.ethz.ch'
-      VIRTUAL_PORT: '3000'
+      VIRTUAL_PORT: '5090'
       LETSENCRYPT_HOST: 'stage.peachlab-cntr1.inf.ethz.ch'
-      LETSENCRYPT_EMAIL: 'yangwu@ethz.ch'
+      LETSENCRYPT_EMAIL: 'wangjun@ethz.ch'
     # Watchtower label enables automatic updates after new images are pushed to GHCR
     labels:
       - com.centurylinklabs.watchtower.enable=true

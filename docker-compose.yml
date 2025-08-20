@@ -17,3 +17,4 @@ services:
       - ./backend:/app/backend
       - /app/backend/node_modules
       - /app/frontend/node_modules
+    platform: linux/amd64

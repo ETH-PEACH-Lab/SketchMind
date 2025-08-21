@@ -214,7 +214,6 @@ app.post("/analyze", async (req, res) => {
     
 
     const prompt = buildPrompt(w, h, stepText);
-
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash', // 或 gemini-2.5-flash（如果有权限）
       contents: [
@@ -351,7 +350,7 @@ app.post("/validate", async (req, res) => {
     if (!text) {
       return res.status(502).json({ ok: false, error: "Empty response from model" });
     }
-
+    console.log("returned data:", text);
     // 尝试解析模型返回的 JSON
     let result;
     try {

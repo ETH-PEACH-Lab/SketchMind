@@ -15,8 +15,11 @@ import { injectSvgImagesAsLibraryItems } from "../utils/loadLibraryFromSVGImages
 import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../utils/geminiOverlay";
 // import { useSession } from 'next-auth/react';
 
-const BACKEND_URL = process.env.REACT_APP_API_URL;
+// const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 // const BACKEND_URL = 'http://localhost:4000';
+export const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5095';
+
 
 const StoryPlayer = dynamic(() => import('../components/StoryPlayer'), {
   ssr: false

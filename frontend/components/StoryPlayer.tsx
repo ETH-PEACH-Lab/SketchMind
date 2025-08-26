@@ -36,6 +36,8 @@ interface StoryPlayerProps {
   currentStepIndex?: number; // 当前步骤索引
   stepChecks?: Record<number, { isValid: boolean; message?: string }>; // 每个步骤的AI检查结果
   containerRef?: React.RefObject<HTMLElement | null>; // 右侧画布容器，用于边界约束
+  titles?: string[]; // 可选：外部自定义标题
+  hints?: string[];  // 可选：外部自定义提示
 }
 
 export default function StoryPlayer({
@@ -51,6 +53,8 @@ export default function StoryPlayer({
   currentStepIndex = 0, // 当前步骤索引
   stepChecks = {}, // 每步检查结果
   containerRef,
+  titles: externalTitles,
+  hints: externalHints,
 }: StoryPlayerProps) {
 
   const [index, setIndex] = useState(0);
@@ -541,10 +545,10 @@ const hints = [
       {/* 内容展示区域 */}
       <CardContent sx={{ cursor: "default" }}>
               <Typography variant="h6" gutterBottom>
-                {titles[index] || `Step ${index + 1}`}
+                {(externalTitles || titles)[index] || `Step ${index + 1}`}
               </Typography>
               <Typography variant="body2" color="text.secondary" whiteSpace="pre-line" mb={2}>
-                {hints[index] || steps[index]?.stepText || ""}
+                {(externalHints || hints)[index] || steps[index]?.stepText || ""}
               </Typography>
 
               {/* AI 风险提示 */}

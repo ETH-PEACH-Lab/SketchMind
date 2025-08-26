@@ -12,9 +12,9 @@
 // const fs = require('fs').promises;
 // const multer = require('multer');
 // import { GoogleGenAI } from '@google/genai';
-// import { ProxyAgent, setGlobalDispatcher } from 'undici';
-// const proxy = new ProxyAgent('http://127.0.0.1:7890');
-// setGlobalDispatcher(proxy);
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+const proxy = new ProxyAgent('http://127.0.0.1:7890');
+setGlobalDispatcher(proxy);
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import express from 'express';
 import cors from 'cors';
@@ -31,6 +31,33 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
+
+// 更详细的错误打印，帮助定位 fetch failed 的具体原因
+function logErrorDetails(prefix, err) {
+  try {
+    const e = err || {};
+    console.error(prefix, {
+      name: e?.name,
+      message: e?.message,
+      type: typeof e,
+      code: e?.code,
+      errno: e?.errno,
+      syscall: e?.syscall,
+      address: e?.address,
+      port: e?.port,
+      cause: e?.cause ? {
+        name: e.cause?.name,
+        message: e.cause?.message,
+        code: e.cause?.code,
+        errno: e.cause?.errno,
+        syscall: e.cause?.syscall,
+      } : undefined,
+      stack: e?.stack,
+    });
+  } catch (_) {
+    console.error(prefix, err);
+  }
+}
 
 // JSON 清理和解析的辅助函数
 // function cleanAndParseJSON(text) {
@@ -257,22 +284,28 @@ async function readImageAsBase64(imagePath) {
 /**
  * 构造提示词（把画布宽高带进去，方便模型输出归一化坐标）
  */
-function buildPrompt(frameW, frameH, stepText = "") {
-  console.log('step', stepText)
+function buildPrompt(frameW, frameH, stepText = "", algorithm = "algo1") {
+  console.log('step', stepText, 'algorithm', algorithm)
+  const algoRec = `Algorithm: We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
+  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0]
+  list2[0] + merge(list1, list2[1:])  otherwise
+Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.`
+  const algoIter = `Algorithm (Iterative): Maintain a dummy prehead node and a pointer prev. Use p1 pointing to list1 and p2 to list2. Repeatedly compare p1 and p2, attach the smaller (if equal attach p1 first) to prev.next and advance that pointer and prev. When one list runs out, attach the remaining list to prev.next.`
+  const algoDesc = algorithm === 'iter' ? algoIter : algoRec;
   return `
-You are an AI assistant that analyzes a linked-list diagram (PNG image; canvas width=${frameW}, height=${frameH}) 
-and proposes the NEXT step overlay ONLY. 
-
-RULES
-- Return INCREMENTAL elements to draw (do not repeat what already exists in the image).
-- Coordinates are normalized to [0,1] relative to the ENTIRE canvas (not viewport).
-- Keep output minimal and strictly valid JSON.
-
-SCHEMA
-{
-  "elements": [
-    {
-      "type": "rectangle" | "ellipse" | "diamond" | "arrow" | "text ,
+ You are an AI assistant that analyzes a linked-list diagram (PNG image; canvas width=${frameW}, height=${frameH}) 
+ and proposes the NEXT step overlay ONLY. 
+ 
+ RULES
+ - Return INCREMENTAL elements to draw (do not repeat what already exists in the image).
+ - Coordinates are normalized to [0,1] relative to the ENTIRE canvas (not viewport).
+ - Keep output minimal and strictly valid JSON.
+ 
+ SCHEMA
+ {
+   "elements": [
+     {
+      "type": "rectangle" | "ellipse" | "diamond" | "arrow" | "text",
       "x_norm": number,                // required; top-left for shapes, start point for arrow
       "y_norm": number,
       // for text
@@ -280,7 +313,6 @@ SCHEMA
       // for shapes:
       "w_norm": number,                // width normalized [0,1]
       "h_norm": number,                // height normalized [0,1]
-      "label": string,                 // inside shapes
       // for arrow:
       "end_x_norm": number,            // required if type = "arrow"
       "end_y_norm": number,
@@ -293,25 +325,22 @@ SCHEMA
     }
   ],
   "notes": string                      // brief reasoning of what you added, in chinese
-}
-
-Algorithm: We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
-  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0]
-  list2[0] + merge(list1, list2[1:])  otherwise
-Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
-
-TASK
-1) Decide which new elements to draw for the next step.
-2) Output ONLY the incremental overlay.
-
-CURRENT STEP (hint to follow):
-Based on Algorithm, ${stepText}, Only show this step
-
-OUTPUT
-- Return STRICT JSON only. No extra commentary. 
-- DO NOT use triple backticks or code fences.
-- DO NOT include explanations outside JSON.
-`.trim();
+ }
+ 
+ ${algoDesc}
+ 
+ TASK
+ 1) Decide which new elements to draw for the next step.
+ 2) Output ONLY the incremental overlay.
+ 
+ CURRENT STEP (hint to follow):
+ Based on Algorithm, ${stepText}, Only show this step
+ 
+ OUTPUT
+ - Return STRICT JSON only. No extra commentary. 
+ - DO NOT use triple backticks or code fences.
+ - DO NOT include explanations outside JSON.
+ `.trim();
 }
 
 /**
@@ -322,7 +351,7 @@ app.post("/analyze", async (req, res) => {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"; // 仅测试用
   try {
     // 支持场景坐标（绝对坐标）返回
-    const { base64, w, h, stepText, coords, originX, originY, frameW, frameH } = req.body || {};
+    const { base64, w, h, stepText, coords, originX, originY, frameW, frameH, algorithm } = req.body || {};
     if (!base64 || !w || !h) {
       return res.status(400).json({ ok: false, error: "Missing base64 or w/h" });
     }
@@ -331,24 +360,30 @@ app.post("/analyze", async (req, res) => {
     // const mimeType = "image/png";
     
 
-    const prompt = buildPrompt(w, h, stepText);
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // 或 gemini-2.5-flash（如果有权限）
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: 'image/png',
-                data: base64,
+    const prompt = buildPrompt(w, h, stepText, algorithm || 'algo1');
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash', // 或 gemini-2.5-flash（如果有权限）
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: 'image/png',
+                  data: base64,
+                },
               },
-            },
-          ],
-        },
-      ],
-    });
+            ],
+          },
+        ],
+      });
+    } catch (e) {
+      logErrorDetails('[analyze] generateContent failed', e);
+      throw e;
+    }
     
     const text = response.text || '';
 //     const text = `{
@@ -527,12 +562,13 @@ app.post("/analyze", async (req, res) => {
 } catch (err) {
     const msg = (err && (err.message || String(err))) || '';
     console.warn("analyze error:", msg);
+    logErrorDetails('[analyze] caught error', err);
     if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up|timeout/i.test(msg)) {
       // 兜底返回友好 200，避免前端中断
       return res.status(200).json({
         ok: true,
         payload: {
-          elements: [],
+          elements: [],                  // 不画新东西
           notes: '网络或 AI 服务暂时不可用，请稍后再试，或再次点击“提示”。'
         }
       });
@@ -631,3 +667,4 @@ OUTPUT RULES (VERY IMPORTANT)
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+// 

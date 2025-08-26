@@ -6,7 +6,10 @@ import MergeAnimationViewer from './MergeAnimationViewer'
 import { Box, Button, IconButton, Tooltip } from '@mui/material'
 import { Visibility, Edit, Delete, InfoOutlined } from '@mui/icons-material'
 
-interface Props { markdown: string }
+interface Props {
+  markdown: string;
+  onAlgorithmSelect?: (alg: 'algo1' | 'iter') => void;
+}
 
 /* ---------- 工具 ---------- */
 const injectSlots = (md: string) =>
@@ -22,7 +25,7 @@ const extract = (md: string, start: RegExp, end: RegExp) => {
   return lines.slice(s, e === -1 ? undefined : e).join('\n')
 }
 
-export default function MarkdownWithDrawing({ markdown }: Props) {
+export default function MarkdownWithDrawing({ markdown, onAlgorithmSelect }: Props) {
   /* 提取 problem / example */
   const [problem, setProblem] = useState('')
   const [example, setExample] = useState('')
@@ -126,6 +129,13 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
                 e.stopPropagation()  // 阻止冒泡到 <details>
                 setSelectedKey(isSelected ? '' : key)
                 setApproach(isSelected ? '' : key + '\n' + rest.map((r: any) => r?.props?.children || '').join('\n'))
+                try {
+                  const keyText = String(key)
+                  if (onAlgorithmSelect) {
+                    if (/方法\s*1|递归/i.test(keyText)) onAlgorithmSelect('algo1')
+                    if (/方法\s*2|迭代/i.test(keyText)) onAlgorithmSelect('iter')
+                  }
+                } catch {}
               }}
               sx={{ textTransform: 'none', fontSize: 12 }}
             >

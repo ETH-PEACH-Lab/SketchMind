@@ -164,33 +164,97 @@ export default function Home() {
   
   // 添加模式切换状态，防止在切换过程中保存
   const isModeSwitching = useRef(false);
+  // 故事模式算法选择：algo1（默认）或 iter（迭代版）
+  const [storyAlgorithm, setStoryAlgorithm] = useState<'algo1' | 'iter'>('algo1');
   
-  const steps = useMemo(
-      () =>
-        [
-          // { stepText: "Let's begin! Please draw two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nUse boxes and arrows to represent the nodes and connections." },
-          // { stepText: "Look at the heads of list1 and list2 (both are 1). \nWhich one should we add first? \nCircle the chosen head in red." },
-          // { stepText: "Now draw the merged list starting with 1 (from list2).\nThen remove this node from list2." },
-          // { stepText: "Compare the new heads: list1 is 1, list2 is 3.\nWhich one goes next in the merged list?" },
-          // { stepText: "Add the 1 from list1 to the merged list.\nUpdate list1 to remove this node, and keep going." },
-          // { stepText: "Which node is smaller: 2 (list1) or 3 (list2)?\nChoose the smaller one to add next." },
-          // { stepText: "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state." },
-          // { stepText: "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it." },
-          // { stepText: "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4." },
-          { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
-          { stepText: "在从 list2 中取出 1，开始绘制合并后的链表。\n然后从 list2 中用红色打叉❌标记移除这个节点。" },
-          { stepText: "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？\n用绿色圆圈🟢标记出你选择的节点。" },
-          { stepText: "将 list1 中的 1 添加到合并后的链表中。\n更新 list1，用红色打叉❌标记移除这个节点，然后继续。" },
-          // { stepText: "哪个节点更小：链表1中的2还是链表2中的3？\n选择更小的那个放在下一个位置。并在原链表中删去它。" },
-          // { stepText: "将更小的节点添加到合并链表中。\n相应地更新你的链表，并画出新的状态。" },
-          // { stepText: "在链表1的4和链表2的3之间，哪一个应该接下来添加？\n添加后绘制更新后的合并链表。" },
-          {stepText: "连续做两次，自己试着完成！现在链表list1: 2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接两个节点"},
+  const titles_iter = [
+    // '初始化指针',
+    '第一次比较并接入',
+    '移动 prev，更新指针',
+    '再次比较',
+    '继续接入，形成 1→1',
+    '循环推进：直到有一条用完',
+    '连接剩余部分',
+    '🎉 全部完成！',
+  ];
+  const hints_iter = [
+    "创建一个虚拟头结点 prehead（值可写 -1，仅作占位），让 prev 指向它；\n设置 l1 指向 list1 头、l2 指向 list2 头。\n现在：l1=1，l2=1。\n比较 l1 与 l2, 应该接入哪个到 prev.next?\n 用⭕标记出你选择的节点。",
+    "把 prev 向前移动到刚接入的1，并将 l1 指向下一个（此时 l1=2）。\n当前合并链：1。",
+    "再次比较：l1=2，l2=1。\n这次应接入哪个节点。",
+    "接入 l2 的 1 后，prev 前移到新接入的 1；l2 前移到 3。\n当前合并链：1 → 1。",
+    "继续循环：\n比较 2 与 3 → 接入 2；\n比较 4 与 3 → 接入 3；\n比较 4 与 4 → 接入任意一个（按 ≤ 规则先接入 list1 的 4）。\n在每次接入后，prev 与对应指针同步前移。",
+    "当某一条链表指针变为 null（示例中接入 list1 的 4 后，l1=null），\n将另一条未用完的链表（此处 l2=4 开头）整体接到 prev.next。",
+    "完成！返回 prehead.next。\n检查：是否得到有序链 1 → 1 → 2 → 3 → 4 → 4，且所有原节点都被包含。",
+  ];
+
+  const steps = useMemo(() => {
+    if (storyAlgorithm === 'iter') {
+      return hints_iter.map((h) => ({ stepText: h }));
+    }
+    return [
+      { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
+      { stepText: "在从 list2 中取出 1，开始绘制合并后的链表。\n然后从 list2 中用红色打叉❌标记移除这个节点。" },
+      { stepText: "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？\n用绿色圆圈🟢标记出你选择的节点。" },
+      { stepText: "将 list1 中的 1 添加到合并后的链表中。\n更新 list1，用红色打叉❌标记移除这个节点，然后继续。" },
+      { stepText: "连续做两次，自己试着完成！现在链表list1: 2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接两个节点"},
           { stepText: "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。" },
-          { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
-          // { stepText: "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" }
-        ] as { stepText: string }[],
-      []
-  );
+      { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
+    ] as { stepText: string }[];
+  }, [storyAlgorithm]);
+
+  // 根据算法重置故事模式的所有步骤与画布；第0步采用不同初始文件
+  const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter') => {
+    if (!excalidrawAPI) return;
+    try {
+      const initFile = alg === 'iter' ? '/initial2.excalidraw' : '/initial1.excalidraw';
+      let initialStep0: StepScene = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+      try {
+        const resp = await fetch(initFile);
+        if (resp.ok) {
+          const data = await resp.json();
+          initialStep0 = {
+            elements: Array.isArray(data?.elements) ? data.elements : [],
+            files: data?.files || {},
+            appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
+          };
+        }
+      } catch {}
+
+      const initialScenes: Record<number, StepScene> = {};
+      initialScenes[0] = initialStep0;
+      for (let i = 1; i < (alg === 'iter' ? hints_iter.length : steps.length); i++) {
+        initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+      }
+      setScenes(initialScenes);
+
+      // 重置步骤索引/状态/提示
+      currentStepIndexRef.current = 0;
+      setCurrentStepIndex(0);
+      // 同步当前步骤文本为所选算法的第0步
+      if (alg === 'iter') {
+        setCurrentStepText(hints_iter[0] || '');
+      } else {
+        setCurrentStepText(
+          "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。"
+        );
+      }
+      setStepStatuses(Array(Object.keys(initialScenes).length).fill('pending'));
+      setStepNotes({});
+      setStepChecks({});
+      setNotes('');
+      setIsNotesOpen(false);
+
+      // 显示第0步
+      const scene0 = initialScenes[0];
+      excalidrawAPI.updateScene({
+        elements: Array.from(scene0.elements) as any[],
+        appState: scene0.appState,
+        captureUpdate: 2 as any,
+      });
+    } catch (e) {
+      console.warn('重置故事模式失败', e);
+    }
+  };
   // const steps = useMemo(
   // () => [
   //   { stepText: "让我们开始吧！请绘制一个节点表示 \( F(5) \)。" },
@@ -620,7 +684,7 @@ export default function Home() {
     const currentElements = excalidrawAPI.getSceneElements();
     const currentFiles = excalidrawAPI.getFiles();
     const currentAppState = excalidrawAPI.getAppState();
-
+    
     console.log(`🔄 模式切换 - 从 ${mode} 切换到 ${newMode}, 当前画布元素数: ${currentElements.length}`);
 
     // 创建临时变量来存储要保存的状态
@@ -631,10 +695,10 @@ export default function Home() {
       // 从故事模式切换到探索模式，保存故事模式的当前状态
       if (currentStepIndexRef.current !== undefined) {
         tempStoryScene = {
-          elements: [...currentElements],
-          files: currentFiles,
-          appState: currentAppState,
-        };
+      elements: [...currentElements],
+      files: currentFiles,
+      appState: currentAppState,
+    };
         console.log(`💾 准备保存故事模式场景 ${currentStepIndexRef.current}, 元素数: ${currentElements.length}`);
       } else {
         console.warn('⚠️ 故事模式下 currentStepIndexRef.current 未定义');
@@ -743,7 +807,7 @@ export default function Home() {
               captureUpdate: 2 as any,
             });
             console.log(`🎨 强制显示故事模式步骤 ${stepIndex} 的保存内容，元素数: ${targetStoryScene.elements.length}`);
-          } else {
+      } else {
             // 没有保存的故事模式内容，显示空白画布
             excalidrawAPI.updateScene({
               elements: [],
@@ -813,8 +877,8 @@ export default function Home() {
             } else {
               // 没有保存内容，强制显示空白画布
               excalidrawAPI.updateScene({
-                elements: [],
-                appState: { viewBackgroundColor: "#fff" },
+          elements: [],
+          appState: { viewBackgroundColor: "#fff" },
                 collaborators: new Map(),
                 captureUpdate: 2 as any,
               });
@@ -1555,7 +1619,8 @@ export default function Home() {
           originX: frameX0,
           originY: frameY0,
           frameW,
-          frameH
+          frameH,
+          algorithm: storyAlgorithm
         }
       : {
           base64: base64,   // 后端期望的字段名
@@ -1567,7 +1632,8 @@ export default function Home() {
           originX: frameX0,
           originY: frameY0,
           frameW,
-          frameH
+          frameH,
+          algorithm: storyAlgorithm
         };
 
     console.log('🔍 发送分析请求:', {
@@ -1995,7 +2061,7 @@ export default function Home() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                入门组
+                递归
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 <Button
@@ -2048,7 +2114,7 @@ export default function Home() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                普及组
+                迭代
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 <Button
@@ -2085,6 +2151,7 @@ export default function Home() {
                 </Button>
               </Box>
             </Box>
+
 
             {/* 组3 */}
             {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
@@ -2199,7 +2266,15 @@ export default function Home() {
       <div className="flex-1 flex">
         {/* 左侧内容 */}
       <div className="w-2/5 relative bg-gray-100">
-        <MarkdownWithDrawing markdown={selectedText} />
+        <MarkdownWithDrawing
+          markdown={selectedText}
+          onAlgorithmSelect={async (alg) => {
+            setStoryAlgorithm(alg);
+            if (mode === 'story') {
+              await resetStoryForAlgorithm(alg);
+            }
+          }}
+        />
       </div>
 
         {/* 右侧内容 */}
@@ -2257,7 +2332,7 @@ export default function Home() {
         /> */}
 
         {/* 遮挡 Excalidraw 左上角菜单按钮的白色遮挡物 */}
-        <Box
+        {/* <Box
           sx={{
             position: 'absolute',
             top: 6,
@@ -2409,7 +2484,7 @@ export default function Home() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Book sx={{ fontSize: 28, color: 'primary.main' }} />
                   <Typography variant="subtitle1" fontWeight={600}>故事模式</Typography>
-                </Box>
+        </Box>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                   按步骤完成链表题目，AI 提示与检查随时辅助。
                 </Typography>
@@ -2993,6 +3068,8 @@ export default function Home() {
             currentStepIndex={currentStepIndex}
             stepChecks={stepChecks}
             containerRef={rightPaneRef}
+            titles={storyAlgorithm === 'iter' ? titles_iter : undefined}
+            hints={storyAlgorithm === 'iter' ? hints_iter : undefined}
           />
                  ) : (
            <ExploreMode 

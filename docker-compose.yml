@@ -1,19 +1,15 @@
-version: '3.8'
+version: "3.8"
 
 services:
   sketchmind:
-    build: 
+    platform: linux/amd64
+    build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-      - "4000:4000"
-    environment:
-      - NODE_ENV=development
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
     env_file:
       - ./.env
-    volumes:
-      - ./frontend:/app/frontend
-      - ./backend:/app/backend
-      - /app/backend/node_modules
-      - /app/frontend/node_modules
+    ports:
+      - "5090:5090"   # Next.js (next start)
+      - "5095:5095"   # Backend (PORT)

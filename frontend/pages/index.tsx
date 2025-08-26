@@ -1,10 +1,20 @@
 import dynamic from 'next/dynamic';
 import { useState, useRef, useMemo, useEffect } from 'react';
 // import StoryPlayer from '../components/StoryPlayer';
-import "@excalidraw/excalidraw/index.css"; 
 // 顶部先引入 MUI 组件
-import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup } from '@mui/material'
+import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon } from '@mui/material'
 import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book } from '@mui/icons-material'
+import TuneIcon from '@mui/icons-material/Tune';
+import CropSquareIcon from '@mui/icons-material/CropSquare';
+import PanToolIcon from '@mui/icons-material/PanTool';
+import NavigationIcon from '@mui/icons-material/Navigation';
+import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined';
+import ArrowRightAltIcon from '@mui/icons-material/ArrowRightAlt';
+import HorizontalRuleIcon from '@mui/icons-material/HorizontalRule';
+import CreateIcon from '@mui/icons-material/Create';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
+// import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import SchemaIcon from '@mui/icons-material/Schema';
 // import { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 // import { loadLibraryFromSVGImages } from "../utils/loadLibraryFromSVGImages";
@@ -16,7 +26,10 @@ import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../utils/ge
 // import { useSession } from 'next-auth/react';
 
 // const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
-const BACKEND_URL = 'http://localhost:4000';
+// const BACKEND_URL = 'http://localhost:4000';
+// export const BACKEND_URL =
+//   process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5095';
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? '/api';
 
 const StoryPlayer = dynamic(() => import('../components/StoryPlayer'), {
   ssr: false
@@ -35,23 +48,122 @@ const MarkdownWithDrawing = dynamic(() => import('../components/MarkdownWithDraw
 // const SVGWhiteboard = dynamic(() => import('../components/SVGWhiteboard'), { ssr: false });
 
 type StepScene = {
-  elements: any[];
+  elements: readonly any[];
   files: any;
   appState?: any;
 };
 
+// 自定义橡皮擦图标（简洁线框款）
+const EraserIcon = (props: any) => (
+  <SvgIcon {...props} viewBox="0 0 24 24">
+    <rect x="7" y="11" width="10" height="6" rx="1.5" transform="rotate(-45 12 14)" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path d="M5 21h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </SvgIcon>
+);
+
 export default function Home() {
+  // 检测是否为移动设备
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  
   const [api, setApi] = useState(null);
   // const [steps, setSteps] = useState<any[]>([])
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawImperativeAPI | null>(null)
   const [currentStepText, setCurrentStepText] = useState<string>(''); 
   const [notes, setNotes] = useState<string>('');
   const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [stepNotes, setStepNotes] = useState<Record<number, string>>({}); // 为每个步骤存储AI提示
+  const [stepChecks, setStepChecks] = useState<Record<number, { isValid: boolean; message?: string }>>({}); // 为每个步骤存储AI检查结果
   const [isSaved, setIsSaved] = useState(false); // 添加保存状态
   const [currentStepIndex, setCurrentStepIndex] = useState(0); // 当前 step 的 index
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
   const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
+  // 自定义插入模式（点击画布插入）
+  const [pendingInsertTool, setPendingInsertTool] = useState<'rectangle' | 'ellipse' | null>(null);
+  const rightPaneRef = useRef<HTMLDivElement | null>(null);
+  // 底部素材库
+  const [showLibraryBottom, setShowLibraryBottom] = useState(false);
+  const [libraryItems, setLibraryItems] = useState<any[]>([]);
+  const [pendingLibraryItem, setPendingLibraryItem] = useState<any | null>(null);
+  const [libraryThumbCache, setLibraryThumbCache] = useState<Record<string, string>>({});
+  const [libraryGhost, setLibraryGhost] = useState<{
+    width: number; height: number; minX: number; minY: number; elements: any[];
+  } | null>(null);
+  const [aiFlash, setAiFlash] = useState<{
+    elements: any[];
+    canvas: { width: number; height: number };
+    offset: { x: number; y: number };
+  } | null>(null);
+  // AI Ghost 叠加层（只显示不落盘）
+  const [aiGhost, setAiGhost] = useState<{
+    elements: any[];
+    canvas: { width: number; height: number };
+    offset: { x: number; y: number };
+  } | null>(null);
+  const aiGhostActiveRef = useRef(false);
+  const lastElementsCountRef = useRef(0);
+  const [ghostViewport, setGhostViewport] = useState<{ scrollX: number; scrollY: number; zoom: number }>({ scrollX: 0, scrollY: 0, zoom: 1 });
+  const [isModeDialogOpen, setIsModeDialogOpen] = useState(false);
 
+  useEffect(() => {
+    if (!aiGhost || !excalidrawAPI) return;
+    let raf = 0;
+    const tick = () => {
+      try {
+        const app = excalidrawAPI.getAppState?.() as any;
+        const scrollX = (app && app.scrollX) || 0;
+        const scrollY = (app && app.scrollY) || 0;
+        const zoom = (app && (app.zoom?.value ?? app.zoom)) || 1;
+        setGhostViewport((prev) => {
+          if (prev.scrollX !== scrollX || prev.scrollY !== scrollY || prev.zoom !== zoom) {
+            return { scrollX, scrollY, zoom };
+          }
+          return prev;
+        });
+      } catch {}
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [aiGhost, excalidrawAPI]);
+  // 画布插入预览（ghost）
+  const [insertGhost, setInsertGhost] = useState<{ x: number; y: number; zoom: number } | null>(null);
+  // 素材库固定标题
+  const libraryCaptions = ['代码','手写','打字','公式','任意图形','箭头连线','矩阵','图','树','栈','数组','链表'];
+
+  // 当前选中的组
+  const [currentGroup, setCurrentGroup] = useState(1);
+  
+  // 导航栏收起/展开状态
+  const [isNavCollapsed, setIsNavCollapsed] = useState(false);
+  
+  // Mode切换窗口的位置状态
+  const [modeWindowPosition, setModeWindowPosition] = useState({ x: 96, y: 16 });
+  const modeWindowDragging = useRef(false);
+  const modeWindowOffset = useRef({ x: 0, y: 0 });
+  const modeWindowRef = useRef<HTMLDivElement | null>(null);
+  const [modeWindowSize, setModeWindowSize] = useState({ width: 220, height: 120 });
+  const [isModeCardCollapsed, setIsModeCardCollapsed] = useState(true);
+
+  // 为每个模式维护独立的画布状态
+  const [exploreModeCanvas, setExploreModeCanvas] = useState<StepScene>({
+    elements: [],
+    files: {},
+    appState: { viewBackgroundColor: "#fff" }
+  });
+  
+  // 记录上一个模式，用于切换时保存状态
+  const previousModeRef = useRef<'story' | 'explore'>('story');
+  
+  // 添加调试状态，帮助排查问题
+  const [debugInfo, setDebugInfo] = useState({
+    lastSavedMode: 'story',
+    lastSavedStoryStep: 0,
+    lastSavedExploreElements: 0,
+  });
+  
+  // 添加模式切换状态，防止在切换过程中保存
+  const isModeSwitching = useRef(false);
   
   const steps = useMemo(
       () =>
@@ -65,26 +177,44 @@ export default function Home() {
           // { stepText: "Add the smaller node to the merged list.\nUpdate your lists accordingly and draw the new state." },
           // { stepText: "Between 4 (list1) and 3 (list2), which one should go next?\nDraw the updated merged list after adding it." },
           // { stepText: "Keep going! Merge the next node.\nDraw the updated list after choosing between 4 and 4." },
-          { stepText: "让我们开始吧！请画出两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n用方框和箭头来表示节点和连接。" },
-          { stepText: "看看链表1和链表2的头节点（都是1）。\n我们应该先添加哪一个呢？\n用红色圆圈圈出你选择的头节点。" },
-          { stepText: "现在开始画合并后的链表，从1开始（来自链表2）。\n然后从链表2中删除这个节点。" },
-          { stepText: "比较新的头节点：链表1是1，链表2是3。\n哪一个应该放在合并链表的下一个位置？" },
-          { stepText: "将链表1中的1添加到合并链表中。\n更新链表1，删除这个节点，然后继续。" },
-          { stepText: "哪个节点更小：链表1中的2还是链表2中的3？\n选择更小的那个放在下一个位置。" },
-          { stepText: "将更小的节点添加到合并链表中。\n相应地更新你的链表，并画出新的状态。" },
-          { stepText: "在链表1的4和链表2的3之间，哪一个应该放在下一个位置？\n添加后画出更新后的合并链表。" },
+          { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
+          { stepText: "在从 list2 中取出 1，开始绘制合并后的链表。\n然后从 list2 中用红色打叉❌标记移除这个节点。" },
+          { stepText: "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？\n用绿色圆圈🟢标记出你选择的节点。" },
+          { stepText: "将 list1 中的 1 添加到合并后的链表中。\n更新 list1，用红色打叉❌标记移除这个节点，然后继续。" },
+          // { stepText: "哪个节点更小：链表1中的2还是链表2中的3？\n选择更小的那个放在下一个位置。并在原链表中删去它。" },
+          // { stepText: "将更小的节点添加到合并链表中。\n相应地更新你的链表，并画出新的状态。" },
+          // { stepText: "在链表1的4和链表2的3之间，哪一个应该接下来添加？\n添加后绘制更新后的合并链表。" },
+          {stepText: "连续做两次，自己试着完成！现在链表list1: 2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接两个节点"},
           { stepText: "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。" },
-          { stepText: "只剩下一个节点了。\n让我们将最后一个节点连接起来完成合并后的链表。" },
-{ stepText: "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" }
+          { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
+          // { stepText: "干得漂亮！你已经逐步构建了合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" }
         ] as { stepText: string }[],
       []
   );
-
+  // const steps = useMemo(
+  // () => [
+  //   { stepText: "让我们开始吧！请绘制一个节点表示 \( F(5) \)。" },
+  //   { stepText: "现在你已经绘制了 \( F(5) \)，接下来应该考虑什么？\( F(5) \) 依赖于哪两个子问题？" },
+  //   { stepText: "你已经找到了 \( F(5) \) 的两个子问题，接下来应该怎么做？\( F(4) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(4) \)，接下来呢？\( F(3) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(3) \)，接下来呢？\( F(2) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(2) \)，接下来呢？\( F(3) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(3) \)，接下来呢？\( F(2) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了所有子问题，现在应该考虑什么？哪些节点是基本情况？" },
+  //   { stepText: "你已经标记了基本情况，接下来应该怎么做？如何从基本情况开始回溯？" },
+  //   { stepText: "你已经开始回溯了，接下来呢？如何逐步计算每个节点的值？" },
+  //   { stepText: "你已经完成了递归树的构建和计算，现在应该做什么？检查你的递归树，确保所有节点的值都已正确计算。" }
+  //       ] as { stepText: string }[],
+  //     []
+  // );
   const [stepStatuses, setStepStatuses] = useState<string[]>(Array(steps.length).fill("pending"));
 
   // 用 index->scene 的 map 存每步画布
   const [scenes, setScenes] = useState<Record<number, StepScene>>({});
   const currentStepIndexRef = useRef(0);
+  
+  // 自动保存定时器
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // 加载本地库文件
@@ -98,50 +228,144 @@ export default function Home() {
             // openLibraryMenu: true,
           });
         }
+        if (data.libraryItems) {
+          setLibraryItems(data.libraryItems);
+        }
       });
   }, [excalidrawAPI]);
 
-  // 初始 step 的空白场景
+  // 初始 step：仅第1步从 public/initial1.excalidraw 初始化，其余空白
   useEffect(() => {
     if (!excalidrawAPI) return;
+    console.log('🚀 初始化画布和场景（第1步载入 initial1.excalidraw，其余空白）');
+    (async () => {
+      let initialStep0: StepScene | null = null;
+      try {
+        const resp = await fetch('/initial1.excalidraw');
+        if (resp.ok) {
+          const data = await resp.json();
+          const elements = Array.isArray(data?.elements) ? data.elements : [];
+          const files = data?.files || {};
+          const appState = { viewBackgroundColor: '#fff', ...(data?.appState || {}) };
+          initialStep0 = { elements, files, appState };
+          console.log('✅ 载入 initial1.excalidraw 成功，元素数:', elements.length);
+        } else {
+          console.warn('⚠️ 载入 initial1.excalidraw 失败:', resp.status);
+        }
+      } catch (e) {
+        console.warn('⚠️ 载入 initial1.excalidraw 异常:', e);
+      }
+
+    const initialScenes: Record<number, StepScene> = {};
+      // 第一步：若有文件则载入，否则空白
+      if (initialStep0) {
+        initialScenes[0] = initialStep0;
+        console.log('✅ 步骤 0 使用 initial1.excalidraw 初始化');
+      } else {
+        initialScenes[0] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+        console.log('✅ 步骤 0 初始化为空白画布（未找到 initial1.excalidraw）');
+      }
+      // 其余步骤空白
+    for (let i = 1; i < steps.length; i++) {
+        initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+        console.log(`✅ 步骤 ${i} 初始化为空白画布`);
+      }
+
+    setScenes(initialScenes);
+      console.log(`✅ 初始化了 ${steps.length} 个步骤，步骤0载入${initialStep0 ? '文件' : '空白'}，其余空白`);
     
-    console.log('🚀 初始化画布和场景');
-    
-    // 只初始化第0步，其他步骤等待用户点击时才创建
-    if (!scenes[0]) {
+      // 显示第0步
+      const scene0 = initialScenes[0];
       excalidrawAPI.updateScene({
-        elements: [],
-        appState: { viewBackgroundColor: "#fff" },
-        captureUpdate: 2, // CaptureUpdateAction.NEVER (不入undo)；不传也行
-      });
-      setScenes((prev) => ({
-        ...prev,
-        0: { elements: [], files: {}, appState: { viewBackgroundColor: "#fff" } },
-      }));
-      console.log('✅ 初始化场景0完成');
+        elements: Array.from(scene0.elements) as any[],
+        appState: scene0.appState,
+      captureUpdate: 2 as any,
+    });
+      console.log('✅ 显示第0步画布');
+    
+    // 确保探索模式有独立的初始状态
+    if (exploreModeCanvas.elements.length === 0) {
+        setExploreModeCanvas({ elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } });
+      console.log('✅ 初始化探索模式画布完成');
     }
     
-    // 确保 currentStepIndexRef 正确设置
     currentStepIndexRef.current = 0;
     console.log('📍 设置当前步骤索引为 0');
+    if (steps.length > 0) {
+      setCurrentStepText(steps[0].stepText);
+      console.log('📝 设置初始步骤文本:', steps[0].stepText.substring(0, 50) + '...');
+    }
+    })();
   }, [excalidrawAPI]); // eslint-disable-line
 
   // 自动保存场景的定时器
   useEffect(() => {
     if (!excalidrawAPI) return;
     
-    console.log('⏰ 启动自动保存定时器');
+    // console.log('⏰ 启动自动保存定时器');
     
-    // 每5秒自动保存一次场景
+    // 每2秒自动保存一次场景，提高保存频率
     const autoSaveInterval = setInterval(() => {
-      if (excalidrawAPI && currentStepIndexRef.current !== undefined) {
-        console.log('⏰ 定时自动保存场景');
+      if (excalidrawAPI) {
+        // console.log('⏰ 定时自动保存场景');
         saveCurrentScene();
       }
-    }, 5000);
+    }, 2000);
 
     return () => clearInterval(autoSaveInterval);
   }, [excalidrawAPI]);
+
+  // 清理mode窗口拖动事件监听器
+  useEffect(() => {
+    return () => {
+      if (modeWindowDragging.current) {
+        window.removeEventListener('mousemove', handleModeWindowMouseMove);
+        window.removeEventListener('mouseup', handleModeWindowMouseUp);
+      }
+    };
+  }, []);
+  
+  // 检测设备类型
+  useEffect(() => {
+    const checkDevice = () => {
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isMobileDevice = /mobile|android|iphone|ipad|ipod|blackberry|windows phone/.test(userAgent);
+      const isTabletDevice = /ipad|android(?!.*mobile)|tablet/.test(userAgent);
+      
+      setIsMobile(isMobileDevice);
+      setIsTablet(isTabletDevice);
+      
+      console.log('🔍 设备检测:', {
+        userAgent: navigator.userAgent,
+        isMobile: isMobileDevice,
+        isTablet: isTabletDevice,
+        screenWidth: window.screen.width,
+        screenHeight: window.screen.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      });
+    };
+    
+    checkDevice();
+    
+    // 监听窗口大小变化
+    const handleResize = () => {
+      checkDevice();
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  // 清理自动保存定时器
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // 监听画布变化，自动保存
   useEffect(() => {
@@ -152,10 +376,11 @@ export default function Home() {
     const debouncedSave = () => {
       clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
-        if (excalidrawAPI && currentStepIndexRef.current !== undefined) {
+        if (excalidrawAPI) {
+          // console.log('🎨 画布变化，自动保存场景');
           saveCurrentScene();
         }
-      }, 1000); // 1秒后保存
+      }, 500); // 减少到0.5秒后保存，提高响应速度
     };
 
     // 监听画布变化事件
@@ -163,12 +388,29 @@ export default function Home() {
       debouncedSave();
     };
 
-    // 这里可以添加更多的事件监听器来检测画布变化
-    // 由于Excalidraw的API限制，我们使用定时器作为备选方案
+    // 尝试监听 Excalidraw 的内部事件
+    try {
+      // 监听元素变化
+      const unsubscribe = excalidrawAPI.onPointerDown(() => {
+        debouncedSave();
+      });
+      
+      // 监听场景更新
+      const unsubscribeScene = excalidrawAPI.onPointerUp(() => {
+        debouncedSave();
+      });
     
     return () => {
       clearTimeout(saveTimeout);
-    };
+        if (unsubscribe) unsubscribe();
+        if (unsubscribeScene) unsubscribeScene();
+      };
+    } catch (error) {
+      console.log('⚠️ 无法监听 Excalidraw 事件，使用定时器作为备选方案');
+      return () => {
+        clearTimeout(saveTimeout);
+      };
+    }
   }, [excalidrawAPI]);
 
   async function blobToBase64(blob: Blob): Promise<string> {
@@ -185,31 +427,85 @@ export default function Home() {
   });
 }
 
-  // 保存当前场景
+  // 保存当前场景 - 根据当前模式保存到对应的状态中
   const saveCurrentScene = () => {
     if (!excalidrawAPI) return;
-    const idx = currentStepIndexRef.current;
+    
+    // 如果正在切换模式，跳过保存
+    if (isModeSwitching.current) {
+      console.log('⚠️ 正在切换模式，跳过保存');
+      return { elements: [], files: {}, appState: {} };
+    }
+    
     const elements = excalidrawAPI.getSceneElements();
     const files = excalidrawAPI.getFiles();
     const appState = excalidrawAPI.getAppState();
     
-    console.log(`🔄 保存场景 ${idx}:`, { 
-      elementsCount: elements.length, 
-      hasFiles: Object.keys(files).length > 0 
-    });
+    // console.log(`💾 保存画布 - 当前模式: ${mode}, 元素数量: ${elements.length}`);
     
-    // 立即更新场景状态
+    if (mode === 'story') {
+      // 故事模式：保存到当前步骤
+      const idx = currentStepIndexRef.current;
+      if (idx === undefined) {
+        console.warn('⚠️ 故事模式下 currentStepIndexRef.current 未定义，跳过保存');
+        return { elements, files, appState };
+      }
+      
+      // console.log(`🔄 保存故事模式场景 ${idx}:`, { 
+      // elementsCount: elements.length, 
+      // hasFiles: Object.keys(files).length > 0 
+    // });
+    
+    // 立即更新场景状态 - 只更新当前步骤，不影响其他步骤
     setScenes((prev) => {
       const newScenes = {
         ...prev,
-        [idx]: { elements, files, appState },
+        [idx]: { elements: [...elements], files, appState },
       };
-      console.log(`💾 场景 ${idx} 已保存，当前场景数量:`, Object.keys(newScenes).length);
+        // console.log(`💾 故事模式场景 ${idx} 已保存，当前场景数量:`, Object.keys(newScenes).length);
       return newScenes;
     });
+      
+      // 更新调试信息
+      setDebugInfo(prev => ({
+        ...prev,
+        lastSavedMode: 'story',
+        lastSavedStoryStep: idx,
+      }));
+      
+    } else if (mode === 'explore') {
+      // 探索模式：保存到探索模式画布状态
+      // console.log(`🔄 保存探索模式画布:`, { 
+      //   elementsCount: elements.length, 
+      //   hasFiles: Object.keys(files).length > 0 
+      // });
+      
+      setExploreModeCanvas({
+        elements: [...elements],
+        files,
+        appState,
+      });
+      // console.log('💾 探索模式画布已保存');
+      
+      // 更新调试信息
+      setDebugInfo(prev => ({
+        ...prev,
+        lastSavedMode: 'explore',
+        lastSavedExploreElements: elements.length,
+      }));
+    }
     
     // 返回保存的场景数据，以便立即使用
     return { elements, files, appState };
+  };
+  
+  // 获取当前步骤的保存状态
+  const getCurrentStepSaveStatus = () => {
+    const currentIdx = currentStepIndexRef.current;
+    if (scenes[currentIdx] && scenes[currentIdx].elements) {
+      return `已保存 (${scenes[currentIdx].elements.length} 个元素)`;
+    }
+    return '未保存';
   };
 
   // 清除临时元素，保留基础图形
@@ -237,17 +533,320 @@ export default function Home() {
     
     // 更新画布
     excalidrawAPI.updateScene({
-      elements: permanentElements,
+      elements: Array.from(permanentElements as any[]),
       appState: excalidrawAPI.getAppState(),
       collaborators: new Map(),
-      captureUpdate: 2,
+      captureUpdate: 2 as any,
     });
     
     // 保存清理后的场景
     saveCurrentScene();
   };
 
-  // 切换步骤：先保存旧的，再加载新的
+  // Mode切换窗口拖动处理函数
+  const handleModeWindowMouseDown = (e: React.MouseEvent) => {
+    modeWindowDragging.current = true;
+    modeWindowOffset.current = {
+      x: e.clientX - modeWindowPosition.x,
+      y: e.clientY - modeWindowPosition.y,
+    };
+    window.addEventListener('mousemove', handleModeWindowMouseMove);
+    window.addEventListener('mouseup', handleModeWindowMouseUp);
+  };
+
+  const handleModeWindowMouseMove = (e: MouseEvent) => {
+    if (!modeWindowDragging.current) return;
+    setModeWindowPosition({
+      x: e.clientX - modeWindowOffset.current.x,
+      y: e.clientY - modeWindowOffset.current.y,
+    });
+  };
+
+  const handleModeWindowMouseUp = () => {
+    modeWindowDragging.current = false;
+    window.removeEventListener('mousemove', handleModeWindowMouseMove);
+    window.removeEventListener('mouseup', handleModeWindowMouseUp);
+  };
+
+  // Pointer 版本（支持触控）与边界夹紧
+  const clampModeWindow = (x: number, y: number) => {
+    const margin = 6;
+    const cw = rightPaneRef.current?.clientWidth ?? window.innerWidth;
+    const ch = rightPaneRef.current?.clientHeight ?? window.innerHeight;
+    const maxX = Math.max(margin, cw - modeWindowSize.width - margin);
+    const maxY = Math.max(margin, ch - modeWindowSize.height - margin);
+    return {
+      x: Math.min(Math.max(margin, x), maxX),
+      y: Math.min(Math.max(margin, y), maxY),
+    };
+  };
+
+  const handleModeWindowPointerDown = (e: React.PointerEvent) => {
+    modeWindowDragging.current = true;
+    modeWindowOffset.current = {
+      x: e.clientX - modeWindowPosition.x,
+      y: e.clientY - modeWindowPosition.y,
+    };
+    window.addEventListener('pointermove', handleModeWindowPointerMove, { passive: false });
+    window.addEventListener('pointerup', handleModeWindowPointerUp, { passive: true });
+  };
+
+  const handleModeWindowPointerMove = (e: PointerEvent) => {
+    if (!modeWindowDragging.current) return;
+    e.preventDefault();
+    const next = clampModeWindow(
+      e.clientX - modeWindowOffset.current.x,
+      e.clientY - modeWindowOffset.current.y
+    );
+    setModeWindowPosition(next);
+  };
+
+  const handleModeWindowPointerUp = () => {
+    modeWindowDragging.current = false;
+    window.removeEventListener('pointermove', handleModeWindowPointerMove as any);
+    window.removeEventListener('pointerup', handleModeWindowPointerUp as any);
+    setModeWindowPosition((prev) => clampModeWindow(prev.x, prev.y));
+  };
+
+  // 统一的模式切换逻辑（供弹窗选择使用）
+  const changeMode = (newMode: 'story' | 'explore') => {
+    if (!excalidrawAPI) return;
+    if (newMode === null || newMode === mode) return;
+    // 设置模式切换标志，防止自动保存
+    isModeSwitching.current = true;
+    console.log('🔄 开始模式切换，禁用自动保存');
+
+    // 保存当前模式的画布状态
+    const currentElements = excalidrawAPI.getSceneElements();
+    const currentFiles = excalidrawAPI.getFiles();
+    const currentAppState = excalidrawAPI.getAppState();
+
+    console.log(`🔄 模式切换 - 从 ${mode} 切换到 ${newMode}, 当前画布元素数: ${currentElements.length}`);
+
+    // 创建临时变量来存储要保存的状态
+    let tempStoryScene: any = null;
+    let tempExploreCanvas: any = null;
+
+    if (mode === 'story') {
+      // 从故事模式切换到探索模式，保存故事模式的当前状态
+      if (currentStepIndexRef.current !== undefined) {
+        tempStoryScene = {
+          elements: [...currentElements],
+          files: currentFiles,
+          appState: currentAppState,
+        };
+        console.log(`💾 准备保存故事模式场景 ${currentStepIndexRef.current}, 元素数: ${currentElements.length}`);
+      } else {
+        console.warn('⚠️ 故事模式下 currentStepIndexRef.current 未定义');
+      }
+    } else if (mode === 'explore') {
+      // 从探索模式切换到故事模式，保存探索模式的画布
+      tempExploreCanvas = {
+        elements: [...currentElements],
+        files: currentFiles,
+        appState: currentAppState,
+      };
+      console.log('💾 准备保存探索模式画布, 元素数:', currentElements.length);
+
+      // 重要：确保探索模式的内容不会影响故事模式
+      console.log('🔒 探索模式内容已保存，不会影响故事模式状态');
+
+      // 关键修复：从探索模式切换到故事模式时，也要保存故事模式当前的状态
+      if (currentStepIndexRef.current !== undefined) {
+        const currentStoryScene = (scenes as any)[currentStepIndexRef.current];
+        if (currentStoryScene && currentStoryScene.elements && currentStoryScene.elements.length > 0) {
+          // 故事模式有内容，保存到临时变量
+          tempStoryScene = {
+            elements: [...currentStoryScene.elements],
+            files: currentStoryScene.files,
+            appState: currentStoryScene.appState,
+          };
+          console.log(`💾 从探索模式切换时，保存故事模式步骤 ${currentStepIndexRef.current} 的当前状态，元素数: ${currentStoryScene.elements.length}`);
+        } else {
+          console.log(`💾 从探索模式切换时，故事模式步骤 ${currentStepIndexRef.current} 没有内容，保持空白`);
+        }
+      }
+    }
+
+    // 重要：先更新状态，再加载画布
+    if (tempStoryScene) {
+      setScenes(prev => ({
+        ...prev,
+        [currentStepIndexRef.current!]: tempStoryScene,
+      }));
+      console.log(`💾 故事模式场景 ${currentStepIndexRef.current} 已保存`);
+    }
+
+    if (tempExploreCanvas) {
+      setExploreModeCanvas(tempExploreCanvas);
+      console.log('💾 探索模式画布已保存');
+    }
+
+    // 关键：验证状态保存结果
+    console.log('🔍 状态保存验证:');
+    console.log(`  - 故事模式临时场景:`, tempStoryScene ? `步骤 ${currentStepIndexRef.current}, 元素数: ${tempStoryScene.elements.length}` : '无');
+    console.log(`  - 探索模式临时画布:`, tempExploreCanvas ? `元素数: ${tempExploreCanvas.elements.length}` : '无');
+
+    // 重要：验证状态分离，确保探索模式内容不会污染故事模式
+    console.log('🔍 状态分离验证:');
+    console.log('  - 故事模式临时场景元素数:', tempStoryScene?.elements?.length || 0);
+    console.log('  - 探索模式临时画布元素数:', tempExploreCanvas?.elements?.length || 0);
+    console.log('  - 当前步骤索引:', currentStepIndexRef.current);
+
+    // 切换到新模式
+    setMode(newMode);
+    previousModeRef.current = newMode;
+
+    // 关键：使用临时变量直接加载画布，不依赖异步状态更新
+    if (excalidrawAPI) {
+      if (newMode === 'explore') {
+        // 加载探索模式的画布 - 直接使用临时变量
+        let targetExploreCanvas;
+        if (tempExploreCanvas) {
+          targetExploreCanvas = tempExploreCanvas;
+          console.log('🎨 使用刚保存的探索模式画布，元素数:', targetExploreCanvas.elements.length);
+        } else {
+          targetExploreCanvas = exploreModeCanvas;
+          console.log('🎨 使用已保存的探索模式画布，元素数:', targetExploreCanvas.elements.length);
+        }
+
+        excalidrawAPI.updateScene({
+          elements: Array.from(targetExploreCanvas.elements) as any[],
+          appState: targetExploreCanvas.appState,
+          collaborators: new Map(),
+          captureUpdate: 2 as any,
+        });
+        console.log('🎨 探索模式画布加载完成');
+      } else if (newMode === 'story') {
+        // 关键：从探索模式切换到故事模式时，使用临时变量直接加载故事模式内容
+        const stepIndex = currentStepIndexRef.current;
+        if (stepIndex !== undefined) {
+          // 重要：直接使用临时变量，不依赖异步的 scenes 状态
+          let targetStoryScene;
+
+          if (tempStoryScene) {
+            // 如果刚保存了故事模式内容，直接使用
+            targetStoryScene = tempStoryScene;
+            console.log(`🎨 使用刚保存的故事模式场景 ${stepIndex}，元素数: ${targetStoryScene.elements.length}`);
+          } else {
+            // 否则从当前 scenes 状态加载
+            targetStoryScene = (scenes as any)[stepIndex];
+            console.log(`🎨 从当前状态加载故事模式场景 ${stepIndex}，元素数: ${targetStoryScene?.elements?.length || 0}`);
+          }
+
+          if (targetStoryScene && targetStoryScene.elements && targetStoryScene.elements.length > 0) {
+            // 有保存的故事模式内容，强制显示
+            excalidrawAPI.updateScene({
+              elements: Array.from(targetStoryScene.elements) as any[],
+              appState: targetStoryScene.appState,
+              collaborators: new Map(),
+              captureUpdate: 2 as any,
+            });
+            console.log(`🎨 强制显示故事模式步骤 ${stepIndex} 的保存内容，元素数: ${targetStoryScene.elements.length}`);
+          } else {
+            // 没有保存的故事模式内容，显示空白画布
+            excalidrawAPI.updateScene({
+              elements: [],
+              appState: { viewBackgroundColor: "#fff" },
+              collaborators: new Map(),
+              captureUpdate: 2 as any,
+            });
+            console.log(`🎨 故事模式步骤 ${stepIndex} 没有保存内容，显示空白画布`);
+          }
+        } else {
+          excalidrawAPI.updateScene({
+            elements: [],
+            appState: { viewBackgroundColor: "#fff" },
+            collaborators: new Map(),
+            captureUpdate: 2 as any,
+          });
+          console.log('🎨 故事模式步骤索引未定义，显示空白画布');
+        }
+        console.log('🎨 故事模式画布加载完成');
+      }
+    }
+
+    // 切换mode时重置一些状态
+    if (newMode === 'explore') {
+      setCurrentStepText('');
+      setCurrentStepIndex(0);
+    }
+
+    // 模式切换完成，重新启用自动保存
+    isModeSwitching.current = false;
+    console.log('✅ 模式切换完成，重新启用自动保存');
+
+    // 如果切换到故事模式，强制验证并恢复正确的状态
+    if (newMode === 'story') {
+      setTimeout(() => {
+        if (excalidrawAPI) {
+          const stepIndex = currentStepIndexRef.current;
+          if (stepIndex !== undefined) {
+            // 重要：使用临时变量，确保状态完全分离
+            let targetScene;
+
+            if (tempStoryScene) {
+              // 优先使用刚保存的故事模式内容
+              targetScene = tempStoryScene;
+              console.log(`🔄 强制验证：使用刚保存的故事模式场景 ${stepIndex}，元素数: ${targetScene.elements.length}`);
+            } else {
+              // 否则从 scenes 状态加载
+              targetScene = (scenes as any)[stepIndex];
+              console.log(`🔄 强制验证：从状态加载故事模式场景 ${stepIndex}，元素数: ${targetScene?.elements?.length || 0}`);
+            }
+
+            const currentElementsNow = excalidrawAPI.getSceneElements();
+            console.log(`🔍 强制验证故事模式步骤 ${stepIndex}:`);
+            console.log(`  - 目标场景元素数:`, targetScene?.elements?.length || 0);
+            console.log(`  - 当前画布元素数:`, currentElementsNow.length);
+
+            // 强制确保画布显示正确的故事模式内容
+            if (targetScene && targetScene.elements && targetScene.elements.length > 0) {
+              // 有保存内容，强制显示保存内容
+              excalidrawAPI.updateScene({
+                elements: Array.from(targetScene.elements) as any[],
+                appState: targetScene.appState,
+                collaborators: new Map(),
+                captureUpdate: 2 as any,
+              });
+              console.log(`🔄 强制恢复故事模式步骤 ${stepIndex} 的保存内容，元素数: ${targetScene.elements.length}`);
+            } else {
+              // 没有保存内容，强制显示空白画布
+              excalidrawAPI.updateScene({
+                elements: [],
+                appState: { viewBackgroundColor: "#fff" },
+                collaborators: new Map(),
+                captureUpdate: 2 as any,
+              });
+              console.log(`🔄 强制清空故事模式步骤 ${stepIndex} 的画布`);
+            }
+          }
+        }
+      }, 5);
+    }
+
+    setIsModeDialogOpen(false);
+  };
+
+  // 初始与尺寸变化：测量并把模式卡片放到右侧画布的左上角（顶格）
+  useEffect(() => {
+    const measureAndCenter = () => {
+      if (modeWindowRef.current) {
+        const rect = modeWindowRef.current.getBoundingClientRect();
+        setModeWindowSize({ width: rect.width, height: rect.height });
+        const margin = 6;
+        // 顶部对齐到容器起始位置
+        setModeWindowPosition(clampModeWindow(margin, margin));
+      }
+    };
+    // 延迟一帧测量，避免初始布局抖动
+    const t = setTimeout(measureAndCenter, 0);
+    const onResize = () => measureAndCenter();
+    window.addEventListener('resize', onResize);
+    return () => { clearTimeout(t); window.removeEventListener('resize', onResize); };
+  }, []);
+
+  // 切换步骤：仅保存当前，再加载目标（不再自动继承上一步）
   const handleStepChange = (stepText: string, nextIndex: number) => {
     if (!excalidrawAPI) return;
     
@@ -264,71 +863,49 @@ export default function Home() {
     // 直接更新场景状态，确保当前场景被保存
     const updatedScenes = { ...scenes };
     updatedScenes[currentStepIndexRef.current] = {
-      elements: currentElements,
+      elements: [...currentElements],
       files: currentFiles,
       appState: currentAppState,
     };
     
-    console.log(`💾 强制保存当前场景 ${currentStepIndexRef.current}，元素数量: ${currentElements.length}`);
+    // console.log(`💾 强制保存当前场景 ${currentStepIndexRef.current}，元素数量: ${currentElements.length}`);
     
-    // 载入目标场景：优先使用已保存的场景，如果没有则基于上一页内容
-    let targetScene: StepScene;
-    
-    if (updatedScenes[nextIndex]) {
-      // 如果目标步骤已有保存的场景，直接使用
-      console.log(`✅ 使用已保存的场景 ${nextIndex}`);
-      targetScene = updatedScenes[nextIndex];
-    } else {
-      // 如果没有保存的场景，基于上一页内容创建新场景
-      console.log(`🔄 创建新场景，基于上一页 ${nextIndex - 1}`);
-      const previousScene = updatedScenes[nextIndex - 1];
-      
-      console.log(`🔍 上一页场景:`, previousScene);
-      
-      if (previousScene && previousScene.elements && previousScene.elements.length > 0) {
-        console.log(`📝 上一页有 ${previousScene.elements.length} 个元素`);
-        console.log(`📝 上一页元素详情:`, previousScene.elements);
-        
-        // 基于上一页内容创建新场景，但清空一些临时元素（如高亮、标注等）
-        const baseElements = previousScene.elements.filter((el: any) => {
-          // 保留基础图形，过滤掉临时标注（可以根据需要调整过滤条件）
-          const shouldKeep = el.type !== 'text' || !el.text?.includes('temp');
-          if (!shouldKeep) {
-            console.log(`🗑️ 过滤掉元素:`, el);
-          }
-          return shouldKeep;
-        });
-        
-        console.log(`✅ 保留 ${baseElements.length} 个基础元素`);
-        console.log(`✅ 保留的元素详情:`, baseElements);
-        
-        targetScene = {
-          elements: baseElements,
-          files: previousScene.files || {},
-          appState: { 
-            ...(previousScene.appState || {}), 
-            viewBackgroundColor: "#fff" 
-          },
-        };
-        
-        // 立即更新场景状态
-        setScenes(prev => {
-          console.log(`💾 保存新创建的场景到索引 ${nextIndex}`);
-          return {
-            ...prev,
-            [nextIndex]: targetScene,
-          };
-        });
-      } else {
-        console.log(`⚠️ 上一页没有内容，创建空白场景`);
-        console.log(`⚠️ 上一页场景状态:`, previousScene);
-        // 如果连上一页都没有，创建空白场景
-        targetScene = {
+    // 载入目标场景：不自动继承，仅使用已保存或空白
+    let targetScene: StepScene = updatedScenes[nextIndex] || {
           elements: [],
           files: {},
           appState: { viewBackgroundColor: "#fff" },
         };
-      }
+
+    // 如果切到第0步但当前为空，做一次懒加载 initial1.excalidraw 作为兜底
+    if (nextIndex === 0 && (!targetScene.elements || targetScene.elements.length === 0)) {
+      (async () => {
+        try {
+          const resp = await fetch('/initial1.excalidraw');
+          if (resp.ok) {
+            const data = await resp.json();
+            const elements = Array.isArray(data?.elements) ? data.elements : [];
+            const files = data?.files || {};
+            const appState = { viewBackgroundColor: '#fff', ...(data?.appState || {}) };
+            const fallback: StepScene = { elements, files, appState };
+            setScenes(prev => ({ ...prev, 0: fallback }));
+            // 立即显示
+            excalidrawAPI.updateScene({
+              elements: Array.from(elements) as any[],
+              appState,
+              collaborators: new Map(),
+              captureUpdate: 2 as any,
+            });
+            console.log('🔁 兜底载入 initial1.excalidraw 并显示到第0步');
+          }
+        } catch {}
+      })();
+    }
+    if (!updatedScenes[nextIndex]) {
+      // 可选：不入库，按需加载空白
+      console.log(`✅ 步骤 ${nextIndex} 使用空白画布（未自动继承）`);
+      } else {
+        console.log(`✅ 使用已保存的场景 ${nextIndex}，元素数量: ${targetScene.elements.length}`);
     }
 
     console.log(`🎨 最终目标场景:`, targetScene);
@@ -336,10 +913,10 @@ export default function Home() {
     
     // 更新画布
     excalidrawAPI.updateScene({
-      elements: targetScene.elements,
+      elements: Array.from(targetScene.elements) as any[],
       appState: targetScene.appState,
       collaborators: new Map(),
-      captureUpdate: 2, // NEVER；不进 undo
+      captureUpdate: 2 as any, // NEVER；不进 undo
     });
     
     // 更新当前步骤索引
@@ -348,6 +925,26 @@ export default function Home() {
     // 更新当前步骤文本
     setCurrentStepText(stepText);
     setCurrentStepIndex(nextIndex);
+    
+    // 加载当前步骤的AI提示（如果有的话）
+    const currentStepNote = stepNotes[nextIndex];
+    if (currentStepNote) {
+      setNotes(currentStepNote);
+      setIsNotesOpen(true);
+    } else {
+      // 如果当前步骤没有AI提示，清空提示并关闭
+      setNotes('');
+      setIsNotesOpen(false);
+    }
+    // 加载当前步骤的AI检查结果（如果有的话），并恢复 stepStatuses
+    const currentStepCheck = stepChecks[nextIndex];
+    if (currentStepCheck) {
+      setStepStatuses(prev => {
+        const next = [...prev];
+        next[nextIndex] = currentStepCheck.isValid ? 'correct' : 'wrong';
+        return next;
+      });
+    }
 
     // 保持 stepStatuses 长度一致
     setStepStatuses((prev) => {
@@ -360,23 +957,51 @@ export default function Home() {
   // 示例按钮：Check = 验证当前 step
   const onCheck = async () => {
     // 场景已经自动保存，这里只需要验证
-    if (!excalidrawAPI) return
-    // const { exportToBlob, exportToSvg } = await import('@excalidraw/excalidraw');
+    if (!excalidrawAPI) {
+      console.log('❌ Excalidraw API 未初始化');
+      return { isValid: false, message: 'Excalidraw API 未初始化' };
+    }
+    
+    // 检查是否在故事模式或探索模式下
+    if (mode !== 'story' && mode !== 'explore') {
+      console.log('❌ 当前不在故事模式或探索模式下，无法验证');
+      return { isValid: false, message: '当前不在故事模式或探索模式下，无法验证' };
+    }
+    
+    try {
+    
     const elements = excalidrawAPI.getSceneElements();
     if (!elements?.length) {
-      alert('Canvas is empty.');
-      return;
+      console.log('❌ 画布为空');
+      setNotes('画布为空，请先在右侧画布绘制后再点击"检查"。');
+      setIsNotesOpen(true);
+      return { isValid: false, message: '画布为空' };
     }
     // 1) 计算场景外接框（导出前做一遍，随 PNG 一起保存 meta）
-    function getSceneAABB(elements: any[]) {
+    function getSceneAABB(elements: ReadonlyArray<any>) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const el of elements) {
         // 简化版：未考虑旋转；要更准可引入官方 bbox 工具
+        if (el.x !== undefined && el.y !== undefined) {
         minX = Math.min(minX, el.x);
         minY = Math.min(minY, el.y);
+          if (el.width !== undefined && el.height !== undefined) {
         maxX = Math.max(maxX, el.x + el.width);
         maxY = Math.max(maxY, el.y + el.height);
+          } else {
+            // 对于没有宽高的元素（如点、线），使用当前位置
+            maxX = Math.max(maxX, el.x);
+            maxY = Math.max(maxY, el.y);
+          }
+        }
       }
+      
+      // 如果没有有效元素或所有值都是 Infinity，使用默认值
+      if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
+        console.log('⚠️ 无法计算有效的外接框，使用默认值');
+        return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+      }
+      
       return { minX, minY, maxX, maxY };
     }
 
@@ -385,17 +1010,35 @@ export default function Home() {
     // ...导出前：
     // const elements = excalidrawAPI.getSceneElements();
     const files = excalidrawAPI.getFiles();
-    const { minX, minY, maxX, maxY } = getSceneAABB(elements);
-    const frameW = (maxX - minX) + 2 * PADDING;
-    const frameH = (maxY - minY) + 2 * PADDING;
+    const { minX, minY, maxX, maxY } = getSceneAABB(Array.from(elements));
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    // 扩大提取区域：在当前外接框基础上向四周扩展
+    const BASE_MARGIN = 120;              // 固定最小外扩像素
+    const MARGIN_RATIO = 0.15;            // 相对外扩比例（基于较大边）
+    const dynamicMargin = MARGIN_RATIO * Math.max(bboxW, bboxH);
+    const EXPAND = Math.max(BASE_MARGIN, dynamicMargin);
+
+    const frameW = bboxW + 2 * EXPAND;
+    const frameH = bboxH + 2 * EXPAND;
     const scale  = Math.min(W / frameW, H / frameH);
     const marginX = (W - scale * frameW) / 2;
     const marginY = (H - scale * frameH) / 2;
-    const frameX0 = minX - PADDING;
-    const frameY0 = minY - PADDING;
+    const frameX0 = minX - EXPAND;
+    const frameY0 = minY - EXPAND;
 
-    const exportMeta = { W, H, PADDING, frameX0, frameY0, frameW, frameH, scale, marginX, marginY };
-    console.log(exportMeta)
+    const exportMeta = { W, H, frameX0, frameY0, frameW, frameH, scale, marginX, marginY, exportPadding: EXPAND };
+    console.groupCollapsed('[DEBUG] validate export');
+    try {
+      const app = excalidrawAPI.getAppState?.() as any;
+      const elementsSample = Array.from(elements).slice(0, 10).map((el: any) => ({ id: el.id, type: el.type, x: el.x, y: el.y, w: el.width, h: el.height, angle: el.angle }));
+      console.log('elements.count', elements.length);
+      console.log('elements.sample<=10', elementsSample);
+      console.log('exportMeta', exportMeta);
+      console.log('appState.scroll', { scrollX: app?.scrollX, scrollY: app?.scrollY });
+      console.log('appState.zoom', app?.zoom?.value ?? app?.zoom);
+    } catch {}
+    console.groupEnd();
     // 用与上面完全一致的参数导出 PNG
     const { exportToBlob } = await import('@excalidraw/excalidraw');
     const blob = await exportToBlob({
@@ -403,137 +1046,428 @@ export default function Home() {
       files,
       appState: { exportWithDarkMode: false, exportEmbedScene: false, viewBackgroundColor: '#fff' },
       getDimensions: () => ({ width: frameW, height: frameH, scale: 1 }),
-      exportPadding: PADDING,
+      exportPadding: EXPAND,
     });
     // 把 PNG + exportMeta 一起发后端（或留在前端，等返回再用）
 
-    // const fd = new FormData();
-    // fd.append("image", blob, `sketch_${Date.now()}.png`);
-
+    // 先尝试保存 PNG（前缀 check_）
     try {
-    // const resp = await fetch(`${BACKEND_URL}/save-png`, { method: 'POST', body: fd });
-    // if (!resp.ok) {
-    //   throw new Error('Upload failed');
-    // }
-    // const { path } = await resp.json();
+      const fd2 = new FormData();
+      fd2.append('image', blob, `check_${Date.now()}.png`);
+      const saveResp2 = await fetch(`${BACKEND_URL}/save-png`, { method: 'POST', body: fd2 });
+      if (!saveResp2.ok) {
+        const t = await saveResp2.text();
+        // console.warn('[save-png check] failed', saveResp2.status, t);
+      } else {
+        const saved2 = await saveResp2.json();
+        // console.groupCollapsed('[save-png check] result');
+        // console.log(saved2);
+        // console.groupEnd();
+      }
+    } catch (e) {
+      // console.warn('[save-png check] error', e);
+    }
+
     const base64 = await blobToBase64(blob);
+    
+    // 检查 base64 数据是否有效
+    if (!base64 || base64.length < 100) {
+      console.error('❌ base64 数据无效:', {
+        base64Length: base64?.length || 0,
+        base64Preview: base64?.substring(0, 50) || 'undefined'
+      });
+      throw new Error('生成的 base64 数据无效');
+    }
+    
+    console.log('✅ base64 数据生成成功，长度:', base64.length);
+    
+    // 检查步骤文本
+    console.log('🔍 当前步骤信息:', {
+      currentStepIndex,
+      currentStepText: currentStepText || 'undefined',
+      currentStepTextLength: currentStepText?.length || 0,
+      mode
+    });
+    
+    // 根据模式检查步骤文本
+    if (mode === 'explore') {
+      if (!currentStepText || currentStepText.trim() === '') {
+        console.log('⚠️ 探索模式下步骤文本为空，将使用默认值');
+        // 探索模式下可以使用默认的推理步骤描述
+      }
+    } else if (mode === 'story') {
+      if (!currentStepText || currentStepText.trim() === '') {
+        console.error('❌ 故事模式下步骤文本为空，无法发送验证请求');
+        throw new Error('步骤文本不能为空，请确保当前步骤有描述文本');
+      }
+    }
     // console.log('Image base64:', base64); // 打印保存的图片路径
     // console.log('Step text:', currentStepText); // 打印步骤文本
+
+    console.log('🔍 发送验证请求:', {
+      base64Length: base64?.length || 0,
+      stepText: currentStepText || 'undefined',
+      stepTextLength: currentStepText?.length || 0,
+      url: `${BACKEND_URL}/validate`
+    });
+    
+    // 检查必需字段 - 根据模式进行不同处理
+    if (mode === 'story' && (!currentStepText || currentStepText.trim() === '')) {
+      console.error('❌ 故事模式下步骤文本为空');
+      throw new Error('故事模式下步骤文本不能为空');
+    } else if (mode === 'explore' && (!currentStepText || currentStepText.trim() === '')) {
+      console.log('⚠️ 探索模式下步骤文本为空，将使用默认值');
+      // 探索模式下继续执行，使用默认值
+    }
+
+    // 根据模式构建不同的验证请求参数
+    const validationRequestBody = mode === 'story' 
+      ? {
+          base64: base64,     // 后端期望的字段名
+          stepText: currentStepText,
+          step: currentStepIndex + 1,  // 故事模式：添加步骤编号
+          mode: 'story'        // 标识这是故事模式
+        }
+      : {
+          base64: base64,     // 后端期望的字段名
+          stepText: currentStepText || 'explore_mode_validation', // 探索模式：使用步骤文本或默认值
+          mode: 'explore'      // 标识这是探索模式
+        };
 
     const analyze = await fetch(`${BACKEND_URL}/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        base64,
-        stepText: currentStepText,
-      }),
+      body: JSON.stringify(validationRequestBody),
     });
 
     if (!analyze.ok) {
-      throw new Error('Validation failed');
+      const errorText = await analyze.text();
+      console.error('❌ 验证请求失败:', {
+        status: analyze.status,
+        statusText: analyze.statusText,
+        errorText: errorText
+      });
+      throw new Error(`Validation failed: ${analyze.status} ${analyze.statusText} - ${errorText}`);
     }
 
     const validationData = await analyze.json();
     console.log('Validation result:', validationData);
-    setNotes(
-  (validationData.isValid ? "✅ Correct!\n" : "❌ Incorrect.\n") +
-  (validationData.message || "")
-);
-    setIsNotesOpen(true);
+    
+    // 前端兜底：如果后端解析失败但 message 是 JSON 字符串，尝试前端再解析一次
+    let vd = validationData as any;
+    if (vd && typeof vd.message === 'string') {
+      const m = vd.message.trim();
+      if (m.startsWith('{') && m.endsWith('}')) {
+        try {
+          const repaired = m
+            .replace(/[""]/g, '"')
+            .replace(/['']/g, "'");
+          const parsed = JSON.parse(repaired);
+          if (parsed && (typeof parsed.isValid === 'boolean')) {
+            vd = { ok: true, ...parsed };
+            console.warn('[validate] frontend parsed JSON from message fallback');
+          }
+        } catch (e) {
+          console.warn('[validate] frontend parse message failed');
+        }
+      }
+    }
 
-    setStepStatuses(prev => {
-      const next = [...prev];
-      next[currentStepIndex] = validationData.isValid ? 'correct' : 'wrong';
-      return next;
-    });
+    // 根据模式显示不同的验证结果，并保存检查结果到 stepChecks
+    if (mode === 'story') {
+      const transient = typeof vd?.message === 'string' && /网络错误|代理不可用|暂时不可用|稍后再试|再次点击/.test(vd.message);
+      if (transient) {
+        // 临时错误：仅提示，不改变状态与检查结果
+        setNotes('网络或 AI 服务暂时不可用，请稍后再试，或再次点击"检查"。');
+        setIsNotesOpen(true);
+      } else {
+        const checkNote = (vd.isValid ? "✅ Correct!\n" : "❌ Incorrect.\n") + (vd.message || "");
+        setNotes(checkNote);
+        // 保存检查结果到当前步骤
+        setStepChecks(prev => ({
+          ...prev,
+          [currentStepIndexRef.current]: { isValid: !!vd.isValid, message: vd.message }
+        }));
+      // 故事模式下更新步骤状态
+      setStepStatuses(prev => {
+        const next = [...prev];
+          next[currentStepIndex] = vd.isValid ? 'correct' : 'wrong';
+        return next;
+      });
+
+        // 如果本步验证通过：将当前画布快照向后初始化到所有"尚未通过"的步骤
+        if (vd.isValid) {
+          const snapshot: StepScene = {
+            elements: Array.from(excalidrawAPI.getSceneElements()) as any[],
+            files: excalidrawAPI.getFiles(),
+            appState: excalidrawAPI.getAppState(),
+          };
+          setScenes(prev => {
+            const next = { ...prev } as Record<number, StepScene>;
+            // 也保存当前步骤
+            next[currentStepIndex] = snapshot;
+            for (let i = currentStepIndex + 1; i < steps.length; i++) {
+              if (stepStatuses[i] !== 'correct') {
+                next[i] = {
+                  elements: Array.from(snapshot.elements) as any[],
+                  files: snapshot.files,
+                  appState: snapshot.appState,
+                };
+              }
+            }
+            return next;
+          });
+        }
+      }
+    } else {
+      const checkNote = (vd.isValid ? "✅ 探索模式验证通过!\n" : "❌ 探索模式验证失败!\n") + (vd.message || "");
+      setNotes(checkNote);
+      setStepChecks(prev => ({
+        ...prev,
+        [currentStepIndexRef.current]: { isValid: !!vd.isValid, message: vd.message }
+      }));
+    }
+    
+    setIsNotesOpen(true);
 // 返回验证结果数组
     return validationData;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     console.error(errorMessage);
-    alert(`Error: ${errorMessage}`);
-    return;
+      setNotes('网络或 AI 服务暂时不可用，请稍后再试，或再次点击"检查"。');
+      setIsNotesOpen(true);
+    return { isValid: false, message: `验证失败: ${errorMessage}` };
   }
+  
 };
+// const selectedText = `
+//   # 斐波那契数列
 
-  const selectedText = `
-  # 🧠 LeetCode 21: Merge Two Sorted Lists
+//   ## 问题描述
 
-  ## 📋 Problem Description
+//   斐波那契数列是一个经典的数列，其中每个数字是前两个数字的和。给定一个整数 \( n \)，计算斐波那契数列的第 \( n \) 项 \( F(n) \)。
 
-  You are given the heads of two sorted linked lists \`list1\` and \`list2\`.
+//   斐波那契数列的定义如下：
+//   \[ F(0) = 0, F(1) = 1 \]
+//   \[ F(n) = F(n - 1) + F(n - 2), \text{对于 } n > 1 \]
 
-  Merge the two lists into one **sorted** list. The list should be made by **splicing together** the nodes of the first two lists. Return the head of the merged linked list.
+//   例如：
+//   \`\`\`
+//   输入：n = 5
+//   输出：5
+//   \`\`\`
 
-  ---
+//   ---
 
-  ### Example
+//   <details>
+//   <summary>✅ 方法 1：递归</summary>
+
+//   ### 直觉
+
+//   使用递归方法可以直观地实现斐波那契数列的计算。递归的核心思想是将问题分解为更小的子问题，直到达到基本情况。对于斐波那契数列，递归公式为：
+//   \[ F(n) = F(n - 1) + F(n - 2) \]
+//   基本情况为：
+//   \[ F(0) = 0 \]
+//   \[ F(1) = 1 \]
+
+//   ### 算法
+
+//   1. 如果 \( n \) 为 0 或 1，直接返回 \( n \)。
+//   2. 否则，递归调用 \( F(n - 1) \) 和 \( F(n - 2) \)，并将结果相加。
+//   3. 返回最终结果。
+
+//   递归算法的实现如下：
+//   \`\`\`python
+//   def fibonacci(n):
+//       if n == 0:
+//           return 0
+//       elif n == 1:
+//           return 1
+//       else:
+//           return fibonacci(n - 1) + fibonacci(n - 2)
+//   \`\`\`
+
+//   </details>
+
+//   ---
+
+//   <details>
+//   <summary>✅ 方法 2：动态规划</summary>
+
+//   ### 直觉
+
+//   动态规划方法可以避免递归中的重复计算，从而提高效率。通过从底向上计算斐波那契数列的每一项，我们可以存储中间结果，避免重复计算。
+
+//   ### 算法
+
+//   1. 初始化一个数组 \`dp\`，其中 \`dp[i]\` 表示第 \( i \) 项的值。
+//   2. 设置基本情况：\`dp[0] = 0\` 和 \`dp[1] = 1\`。
+//   3. 从 2 到 \( n \) 遍历，计算每一项的值：\`dp[i] = dp[i - 1] + dp[i - 2]\`。
+//   4. 返回 \`dp[n]\`。
+
+//   动态规划算法的实现如下：
+//   \`\`\`python
+//   def fibonacci(n):
+//       if n == 0:
+//           return 0
+//       elif n == 1:
+//           return 1
+//       dp = [0] * (n + 1)
+//       dp[0] = 0
+//       dp[1] = 1
+//       for i in range(2, n + 1):
+//           dp[i] = dp[i - 1] + dp[i - 2]
+//       return dp[n]
+//   \`\`\`
+
+//   </details>
+// `;
+
+// console.log(selectedText);
+  const selectedText = `  # 合并两个有序链表
+
+  ## 问题描述
+
+  给定两个有序链表的头节点 \`list1\` 和 \`list2\`。
+
+  将这两个链表合并为一个**有序**链表。合并后的链表应通过将两个链表的节点**拼接**在一起形成。返回合并后的链表的头节点。
+
 
   \`\`\`
-  Input: list1 = [1,2,4], list2 = [1,3,4]
+  输入：list1 = [1,2,4], list2 = [1,3,4]
   \`\`\`
-
-  ### Constraints
-
-  - The number of nodes in both lists is in the range \`[0, 50]\`.
-  - \`-100 <= Node.val <= 100\`
-  - Both \`list1\` and \`list2\` are sorted in **non-decreasing order**.
 
   ---
 
   <details>
-  <summary>✅ Approach 1: Recursion</summary>
+  <summary>✅ 方法 1：递归</summary>
 
-  ### Intuition
+  ### 直觉
 
-  We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
+  我们可以递归地定义两个链表的合并操作结果如下（避免处理空链表的特殊情况）：
 
 
   list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
-  list2[0] + merge(list1, list2[1:])  otherwise
+  list2[0] + merge(list1, list2[1:])  否则
 
 
-  Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
+  即较小的链表头节点加上对剩余元素的合并结果。
 
-  ### Algorithm
+  ### 算法
 
-  We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.
+  我们直接模拟上述递归过程，首先处理边界情况。具体来说，如果 l1 或 l2 中的任意一个最初为 null，则无需合并，直接返回非空链表即可。否则，我们确定 l1 和 l2 中哪个头节点较小，并递归地将其 next 值设置为下一次合并的结果。鉴于两个链表均以 null 结尾，递归最终会终止。
 
   </details>
 
   ---
 
   <details>
-  <summary>✅ Approach 2: Iteration</summary>
+  <summary>✅ 方法 2：迭代</summary>
 
-  ### Intuition
+  ### 直觉
 
-  We can achieve the same idea via iteration by assuming that l1 is entirely less than l2 and processing the elements one-by-one, inserting elements of l2 in the necessary places in l1.
+  我们可以通过迭代实现相同的思想，假设 l1 完全小于 l2，并逐个处理元素，将 l2 的元素插入到 l1 的必要位置。
 
-  ### Algorithm
+  ### 算法
 
-  First, we set up a false "prehead" node that allows us to easily return the head of the merged list later. We also maintain a prev pointer, which points to the current node for which we are considering adjusting its next pointer. Then, we do the following until at least one of l1 and l2 points to null: if the value at l1 is less than or equal to the value at l2, then we connect l1 to the previous node and increment l1. Otherwise, we do the same, but for l2. Then, regardless of which list we connected, we increment prev to keep it one step behind one of our list heads.
+  首先，我们设置一个虚假的"prehead"节点，以便稍后轻松返回合并链表的头节点。我们还维护一个 prev 指针，指向当前正在考虑调整其 next 指针的节点。然后，我们执行以下操作，直到 l1 和 l2 中至少有一个指向 null：如果 l1 的值小于或等于 l2 的值，则将 l1 连接到前一个节点并递增 l1。否则，我们对 l2 执行相同的操作。然后，无论我们连接了哪个链表，我们都递增 prev，使其始终落后于其中一个链表头一步。
 
-  After the loop terminates, at most one of l1 and l2 is non-null. Therefore (because the input lists were in sorted order), if either list is non-null, it contains only elements greater than all of the previously-merged elements. This means that we can simply connect the non-null list to the merged list and return it.
+  循环终止后，l1 和 l2 中最多有一个非空。因此（因为输入链表是按排序顺序排列的），如果任意一个链表非空，则它只包含大于所有已合并元素的元素。这意味着我们可以简单地将非空链表连接到合并链表并返回。
 
-  To see this in action on an example, check out the animation below:
+  要查看此操作的示例，请查看下面的动画：
 
   <!-- animation-slot -->
   </details>
-  `;
+  `
+  // const selectedText = `
+  // # 🧠 LeetCode 21: Merge Two Sorted Lists
+
+  // ## 📋 Problem Description
+
+  // You are given the heads of two sorted linked lists \`list1\` and \`list2\`.
+
+  // Merge the two lists into one **sorted** list. The list should be made by **splicing together** the nodes of the first two lists. Return the head of the merged linked list.
+
+  // ---
+
+  // ### Example
+
+  // \`\`\`
+  // Input: list1 = [1,2,4], list2 = [1,3,4]
+  // \`\`\`
+
+  // ### Constraints
+
+  // - The number of nodes in both lists is in the range \`[0, 50]\`.
+  // - \`-100 <= Node.val <= 100\`
+  // - Both \`list1\` and \`list2\` are sorted in **non-decreasing order**.
+
+  // ---
+
+  // <details>
+  // <summary>✅ Approach 1: Recursion</summary>
+
+  // ### Intuition
+
+  // We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
+
+
+  // list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
+  // list2[0] + merge(list1, list2[1:])  otherwise
+
+
+  // Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
+
+  // ### Algorithm
+
+  // We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.
+
+  // </details>
+
+  // ---
+
+  // <details>
+  // <summary>✅ Approach 2: Iteration</summary>
+
+  // ### Intuition
+
+  // We can achieve the same idea via iteration by assuming that l1 is entirely less than l2 and processing the elements one-by-one, inserting elements of l2 in the necessary places in l1.
+
+  // ### Algorithm
+
+  // First, we set up a false "prehead" node that allows us to easily return the head of the merged list later. We also maintain a prev pointer, which points to the current node for which we are considering adjusting its next pointer. Then, we do the following until at least one of l1 and l2 points to null: if the value at l1 is less than or equal to the value at l2, then we connect l1 to the previous node and increment l1. Otherwise, we do the same, but for l2. Then, regardless of which list we connected, we increment prev to keep it one step behind one of our list heads.
+
+  // After the loop terminates, at most one of l1 and l2 is non-null. Therefore (because the input lists were in sorted order), if either list is non-null, it contains only elements greater than all of the previously-merged elements. This means that we can simply connect the non-null list to the merged list and return it.
+
+  // To see this in action on an example, check out the animation below:
+
+  // <!-- animation-slot -->
+  // </details>
+  // `;
   const handleNotesClose = () => {
       setIsNotesOpen(false);
     };
   const onNextDraw = async () => {
-    if (!excalidrawAPI) return
-    // const { exportToBlob, exportToSvg } = await import('@excalidraw/excalidraw');
+    if (!excalidrawAPI) {
+      console.log('❌ Excalidraw API 未初始化');
+      return;
+    }
+    
+    // 检查是否在故事模式或探索模式下
+    if (mode !== 'story' && mode !== 'explore') {
+      console.log('❌ 当前不在故事模式或探索模式下，无法执行 AI 绘制');
+      return;
+    }
+    
     const elements = excalidrawAPI.getSceneElements();
     if (!elements?.length) {
-      alert('Canvas is empty.');
+      console.log('❌ 画布为空');
+      setNotes('画布为空，请先在右侧画布绘制后再点击"提示"。');
+      setIsNotesOpen(true);
       return;
     }
     // 1) 计算场景外接框（导出前做一遍，随 PNG 一起保存 meta）
-    function getSceneAABB(elements: any[]) {
+    function getSceneAABB(elements: ReadonlyArray<any>) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const el of elements) {
         // 简化版：未考虑旋转；要更准可引入官方 bbox 工具
@@ -546,21 +1480,37 @@ export default function Home() {
     }
 
     // 2) 导出 PNG 时计算元信息（务必与实际导出参数一致）
-    const W = 1200, H = 800, PADDING = 0;
+    const W = 1200, H = 800;
     // ...导出前：
     // const elements = excalidrawAPI.getSceneElements();
     const files = excalidrawAPI.getFiles();
-    const { minX, minY, maxX, maxY } = getSceneAABB(elements);
-    const frameW = (maxX - minX) + 2 * PADDING;
-    const frameH = (maxY - minY) + 2 * PADDING;
+    const { minX, minY, maxX, maxY } = getSceneAABB(Array.from(elements));
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    // 动态外扩边距，避免裁剪过紧
+    const BASE_MARGIN = 120;
+    const MARGIN_RATIO = 0.15;
+    const EXPAND = Math.max(BASE_MARGIN, MARGIN_RATIO * Math.max(bboxW, bboxH));
+    const frameW = bboxW + 2 * EXPAND;
+    const frameH = bboxH + 2 * EXPAND;
     const scale  = Math.min(W / frameW, H / frameH);
     const marginX = (W - scale * frameW) / 2;
     const marginY = (H - scale * frameH) / 2;
-    const frameX0 = minX - PADDING;
-    const frameY0 = minY - PADDING;
+    const frameX0 = minX - EXPAND;
+    const frameY0 = minY - EXPAND;
 
-    const exportMeta = { W, H, PADDING, frameX0, frameY0, frameW, frameH, scale, marginX, marginY };
-    console.log(exportMeta)
+    const exportMeta = { W, H, frameX0, frameY0, frameW, frameH, scale, marginX, marginY, exportPadding: EXPAND };
+    console.groupCollapsed('[DEBUG] analyze export');
+    try {
+      const app = excalidrawAPI.getAppState?.() as any;
+      const elementsSample = Array.from(elements).slice(0, 10).map((el: any) => ({ id: el.id, type: el.type, x: el.x, y: el.y, w: el.width, h: el.height, angle: el.angle }));
+      console.log('elements.count', elements.length);
+      console.log('elements.sample<=10', elementsSample);
+      console.log('exportMeta', exportMeta);
+      console.log('appState.scroll', { scrollX: app?.scrollX, scrollY: app?.scrollY });
+      console.log('appState.zoom', app?.zoom?.value ?? app?.zoom);
+    } catch {}
+    console.groupEnd();
     // 用与上面完全一致的参数导出 PNG
     const { exportToBlob } = await import('@excalidraw/excalidraw');
     const blob = await exportToBlob({
@@ -568,42 +1518,120 @@ export default function Home() {
       files,
       appState: { exportWithDarkMode: false, exportEmbedScene: false, viewBackgroundColor: '#fff' },
       getDimensions: () => ({ width: frameW, height: frameH, scale: 1 }),
-      exportPadding: PADDING,
+      exportPadding: EXPAND,
     });
     // 把 PNG + exportMeta 一起发后端（或留在前端，等返回再用）
+    // 先尝试保存 PNG 到后端（失败不影响后续）
+    let savedPngUrl: string | undefined;
+    try {
+      const fd = new FormData();
+      fd.append('image', blob, `analyze_${Date.now()}.png`);
+      const saveResp = await fetch(`${BACKEND_URL}/save-png`, { method: 'POST', body: fd });
+      if (saveResp.ok) {
+        const saved = await saveResp.json();
+        // console.groupCollapsed('[save-png] result');
+        // console.log(saved);
+        // console.groupEnd();
+        savedPngUrl = saved?.url;
+      } else {
+        const t = await saveResp.text();
+        // console.warn('[save-png] failed', saveResp.status, t);
+      }
+    } catch (e) {
+      // console.warn('[save-png] error', e);
+    }
 
     const base64 = await blobToBase64(blob);
-    // const fd = new FormData();
-    // fd.append("image", blob, `sketch_${Date.now()}.png`);
 
-    // // 1) 上传 PNG
-    // const resp = await fetch(`${BACKEND_URL}/save-png`, { method: 'POST', body: fd });
-    // if (!resp.ok) {
-    //   console.error('upload failed');
-    //   return;
-    // }
-    // const { path } = await resp.json(); // 例如: /uploads/sketch_***.png
+    // 根据模式构建不同的请求参数
+    const requestBody = mode === 'story' 
+      ? {
+          base64: base64,   // 后端期望的字段名
+          w: frameW,        // 坐标归一化基于裁剪图片尺寸（含边距）
+          h: frameH,
+          stepText: currentStepText, // 故事模式：当前步骤提示
+          mode: 'story',      // 标识这是故事模式
+          coords: 'scene',    // 期望后端返回场景坐标（绝对坐标）
+          originX: frameX0,
+          originY: frameY0,
+          frameW,
+          frameH
+        }
+      : {
+          base64: base64,   // 后端期望的字段名
+          w: frameW,        // 坐标归一化基于裁剪图片尺寸（含边距）
+          h: frameH,
+          stepText: currentStepText || 'explore_mode', // 探索模式：使用步骤文本或默认值
+          mode: 'explore',    // 标识这是探索模式
+          coords: 'scene',    // 期望后端返回场景坐标（绝对坐标）
+          originX: frameX0,
+          originY: frameY0,
+          frameW,
+          frameH
+        };
+
+    console.log('🔍 发送分析请求:', {
+      base64Length: base64?.length || 0,
+      frameW,
+      frameH,
+      stepText: requestBody.stepText,
+      mode: requestBody.mode,
+      coords: (requestBody as any).coords,
+      origin: { x: (requestBody as any).originX, y: (requestBody as any).originY },
+      url: `${BACKEND_URL}/analyze`
+    });
+    console.log('[DEBUG] analyze requestBody', requestBody);
 
     // 2) 调用后端分析接口
-    const analyze = await fetch(`${BACKEND_URL}/analyze`, {
+    let analyze;
+    try {
+      analyze = await fetch(`${BACKEND_URL}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        base64,   // 你保存的本地 png 路径，比如 backend/save-png 返回的绝对/相对路径
-        w: frameW,         // 你导出 PNG 时固定的宽
-        h: frameH,         // 你导出 PNG 时固定的高
-        stepText:   currentStepText // 可选：给模型的当前步骤提示
-      })
+      body: JSON.stringify(requestBody)
     });
-
+    } catch (e) {
+      console.error('❌ 分析请求异常:', e);
+      setNotes('网络或 AI 服务暂时不可用，请稍后再试，或再次点击"提示"。');
+      setIsNotesOpen(true);
+      return;
+    }
 
     if (!analyze.ok) {
-      console.error('analyze failed');
+      const errorText = await analyze.text();
+      console.error('❌ 分析请求失败:', {
+        status: analyze.status,
+        statusText: analyze.statusText,
+        errorText: errorText
+      });
+      setNotes('AI 服务暂时繁忙，请稍后再试，或再次点击"提示"。');
+      setIsNotesOpen(true);
       return;
     }
 
     const data = await analyze.json();
-    console.log("return gemini data", data.payload)
+    console.groupCollapsed('[AI Overlay] response payload');
+    console.log('payload', data?.payload);
+    try {
+      const count = Array.isArray(data?.payload?.elements) ? data.payload.elements.length : 0;
+      console.log('payload.elements.count', count);
+      console.log('mapping.frame', { frameX0, frameY0, frameW, frameH });
+    } catch {}
+    try {
+      const els = data?.payload?.elements || [];
+      const mapped = els.slice(0, 10).map((el: any) => ({
+        type: el?.type,
+        norm: { x: el?.x_norm, y: el?.y_norm, w: el?.w_norm, h: el?.h_norm },
+        scene: {
+          x: frameX0 + (el?.x_norm ?? 0) * frameW,
+          y: frameY0 + (el?.y_norm ?? 0) * frameH,
+          w: (el?.w_norm ?? 0) * frameW,
+          h: (el?.h_norm ?? 0) * frameH,
+        },
+      }));
+      console.log('mapped(scene est.) sample<=10', mapped);
+    } catch {}
+    console.groupEnd();
     // const data = {
     //   "elements": [
     //     {
@@ -640,7 +1668,7 @@ export default function Home() {
     //   ],
     //   "notes": "Compared heads (1 from list1, 1 from list2). As per instruction, took 1 from list2. 'Merged' pointer now points to list2's node '1'. List2's head pointer (underline) advances to node '3'."
     // }
-    // let parsed;
+    let parsed;
     try {
       console.log('payload:', data.payload);
     //   applyGeminiElementsToExcalidraw(excalidrawAPI, data.payload, {
@@ -648,12 +1676,39 @@ export default function Home() {
     //   height: frameH,
     // },{x: frameX0, 
     //   y: frameY0,});
-         await applyGeminiElementsToExcalidraw(excalidrawAPI, data.payload, { width: frameW, height: frameH }, { x: frameX0, y: frameY0 });
-
-       // AI添加元素后自动保存场景
+        // 直接写入画布元素（嵌入到 Excalidraw 场景）
+        await applyGeminiElementsToExcalidraw(
+          excalidrawAPI,
+          data.payload,
+          { width: frameW, height: frameH },
+          { x: frameX0, y: frameY0 }
+        );
+        // 写入后立即保存
        saveCurrentScene();
+        // 清理任何现有 Ghost
+        setAiGhost(null);
+        aiGhostActiveRef.current = false;
        
-       setNotes(data.payload.notes);
+       // 根据模式显示不同的提示信息
+       if (mode === 'story') {
+         const extra = savedPngUrl ? `\n🖼 已保存: ${savedPngUrl}` : '';
+         const aiNote = `🎨 AI绘制完成:\n${data.payload.notes || "暂无说明"}`;
+         setNotes(aiNote);
+         // 将AI提示保存到当前步骤
+         setStepNotes(prev => ({
+           ...prev,
+           [currentStepIndexRef.current]: aiNote
+         }));
+       } else {
+         const extra = savedPngUrl ? `\n🖼 已保存: ${savedPngUrl}` : '';
+         const aiNote = `💡 AI画图提示:\n${data.payload.notes || "暂无提示"}`;
+         setNotes(aiNote);
+         // 将AI提示保存到当前步骤
+         setStepNotes(prev => ({
+           ...prev,
+           [currentStepIndexRef.current]: aiNote
+         }));
+       }
        setIsNotesOpen(true);
        // parsed = validateGeminiOverlayResponse(raw);
      } catch (e) {
@@ -661,32 +1716,516 @@ export default function Home() {
        return;
      }
      // // console.log("notes:", data.notes");
-       }
+  };
+    
+  // 在当前视口中心插入一个固定大小的矩形（单击即可插入，后续可手动调整）
+  const insertFixedRectangle = async () => {
+    if (!excalidrawAPI) return;
+    try {
+      const appState = excalidrawAPI.getAppState();
+      const scrollX = (appState && (appState as any).scrollX) || 0;
+      const scrollY = (appState && (appState as any).scrollY) || 0;
+      const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+      // 使用 Excalidraw 画布尺寸（更准确地居中到画布中间，而不是窗口中间）
+      const canvasW = ((appState as any).width ?? window.innerWidth) || 1200;
+      const canvasH = ((appState as any).height ?? window.innerHeight) || 800;
+      const fixedW = 50;
+      const fixedH = 50;
+      const centerX = scrollX + canvasW / zoom / 2;
+      const centerY = scrollY + canvasH / zoom / 2;
+
+      const skeletons = [
+        {
+          type: 'rectangle',
+          x: centerX - fixedW / 2,
+          y: centerY - fixedH / 2,
+          width: fixedW,
+          height: fixedH,
+          strokeColor: '#000000',
+          backgroundColor: 'transparent',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+          roughness: 1,
+        },
+      ];
+
+      const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
+      const newEls = convertToExcalidrawElements(skeletons as any);
+      excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
+      // 自动保存新元素
+      saveCurrentScene();
+    } catch (e) {
+      console.error('插入固定矩形失败', e);
+    }
+  };
+
+  // 在指定场景坐标中心点插入固定大小矩形
+  const insertFixedRectangleAt = async (centerX: number, centerY: number) => {
+    if (!excalidrawAPI) return;
+    try {
+      const fixedW = 50;
+      const fixedH = 50;
+      const skeletons = [
+        {
+          type: 'rectangle',
+          x: centerX - fixedW / 2,
+          y: centerY - fixedH / 2,
+          width: fixedW,
+          height: fixedH,
+          strokeColor: '#000000',
+          backgroundColor: 'transparent',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+          roughness: 1,
+        },
+      ];
+      const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
+      const newEls = convertToExcalidrawElements(skeletons as any);
+      excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
+      saveCurrentScene();
+    } catch (e) {
+      console.error('插入固定矩形失败', e);
+    }
+  };
+
+  // 在指定场景坐标中心点插入固定大小椭圆（默认圆形）
+  const insertFixedEllipseAt = async (centerX: number, centerY: number) => {
+    if (!excalidrawAPI) return;
+    try {
+      const diameter = 50;
+      const skeletons = [
+        {
+          type: 'ellipse',
+          x: centerX - diameter / 2,
+          y: centerY - diameter / 2,
+          width: diameter,
+          height: diameter,
+          strokeColor: '#000000',
+          backgroundColor: 'transparent',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+          roughness: 1,
+        },
+      ];
+      const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
+      const newEls = convertToExcalidrawElements(skeletons as any);
+      excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
+      saveCurrentScene();
+    } catch (e) {
+      console.error('插入固定椭圆失败', e);
+    }
+  };
+  
+  // 切换 Excalidraw 工具（hand / selection / rectangle / ellipse / arrow / freedraw / text / eraser）
+  const setTool = (tool: 'hand' | 'selection' | 'rectangle' | 'ellipse' | 'arrow' | 'line' | 'freedraw' | 'text' | 'eraser') => {
+    if (!excalidrawAPI) return;
+    try {
+      if (tool === 'freedraw') {
+        // 将自由绘制笔触设为 thin
+        (excalidrawAPI as any).updateScene?.({
+          appState: { currentItemStrokeWidth: 1 } as any,
+        });
+      } else if (tool === 'arrow' || tool === 'line') {
+        // 箭头、连线设为 bold
+        (excalidrawAPI as any).updateScene?.({
+          appState: { currentItemStrokeWidth: 2 } as any,
+        });
+      } else if (tool === 'text') {
+        // 文字设为 XL 大小，字体为 normal（Helvetica）
+        (excalidrawAPI as any).updateScene?.({
+          appState: { currentItemFontSize: 36, currentItemFontFamily: 2 } as any,
+        });
+      }
+      (excalidrawAPI as any).setActiveTool?.({ type: tool });
+    } catch (e) {
+      console.warn('setActiveTool failed', e);
+    }
+  };
+  
+  // 素材缩略图组件（基于 exportToBlob 渲染，避免 Worker 跨域问题）
+  const LibraryItemThumb = ({ item, thumbId, width = 96, height = 64, onClick }: { item: any; thumbId: string; width?: number; height?: number; onClick: () => void }) => {
+    const [url, setUrl] = useState<string | null>(null);
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          // 如已缓存，直接使用，避免重复生成导致闪烁
+          const cached = libraryThumbCache[thumbId];
+          if (cached) {
+            if (!cancelled) setUrl(cached);
+            return;
+          }
+          const { exportToBlob } = await import('@excalidraw/excalidraw');
+          const elements = (item && item.elements) || [];
+          if (!elements.length) return;
+          const blob = await exportToBlob({
+            elements,
+            appState: { exportWithDarkMode: false, viewBackgroundColor: '#fff' } as any,
+            files: {},
+            exportPadding: 8,
+          } as any);
+          if (cancelled) return;
+          const createdUrl = URL.createObjectURL(blob);
+          setUrl(createdUrl);
+          setLibraryThumbCache(prev => ({ ...prev, [thumbId]: createdUrl }));
+        } catch (e) {
+          // ignore thumbnail failure
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [item, thumbId, libraryThumbCache]);
+    return (
+      <Box onClick={onClick}
+        sx={{
+          width,
+          height,
+          border: '1px solid #e0e0e0',
+          borderRadius: 1,
+          bgcolor: '#fff',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          flex: '0 0 auto',
+        }}
+      >
+        {url ? (
+          <img src={url} alt={item?.name || 'thumb'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        ) : (
+          <Box sx={{ width: '100%', height: '100%', bgcolor: '#fafafa' }} />
+        )}
+      </Box>
+    );
+  };
+
+  // 打开素材库：先切到选择工具，避免左侧面板展开
+  const openLibrary = () => {
+    if (!excalidrawAPI) return;
+    try {
+      (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
+      setPendingInsertTool(null);
+      // 固定打开底部素材库，避免重复点击造成闪烁
+      setShowLibraryBottom(true);
+    } catch (e) {
+      console.warn('openLibrary failed', e);
+    }
+  };
     
 
     
   return (
     <div className="flex h-screen">
-      {/* Left side */}
+      {/* 左侧导航栏 */}
+      <Box
+        sx={{
+          width: isNavCollapsed ? 0 : 80,
+          bgcolor: 'background.paper',
+          borderRight: isNavCollapsed ? 0 : 1,
+          borderColor: 'divider',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: 2,
+          transition: 'width 0.3s ease, border-right 0.3s ease',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* 收起/展开按钮 */}
+        <IconButton
+          onClick={() => setIsNavCollapsed(!isNavCollapsed)}
+          sx={{
+            position: 'fixed',
+            left: isNavCollapsed ? 8 : 72,
+            top: 20,
+            bgcolor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            boxShadow: 2,
+            zIndex: 1000,
+            width: 32,
+            height: 32,
+            '&:hover': {
+              bgcolor: 'action.hover',
+            },
+          }}
+        >
+          {isNavCollapsed ? <NextIcon /> : <NextIcon sx={{ transform: 'rotate(180deg)' }} />}
+        </IconButton>
+      
+                <Box sx={{ flex: 1, p: 1, overflow: 'hidden' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {/* 演示按钮 */}
+            <Button
+              variant="contained"
+              fullWidth
+              sx={{
+                py: 1,
+                fontSize: '0.875rem',
+                fontWeight: 'bold',
+                opacity: isNavCollapsed ? 0 : 1,
+                transition: 'opacity 0.3s ease',
+              }}
+            >
+              演示
+            </Button>
+            
+            {/* <Box
+              sx={{
+                height: 1,
+                bgcolor: 'divider',
+                my: 1,
+                opacity: isNavCollapsed ? 0 : 1,
+                transition: 'opacity 0.3s ease',
+              }}
+            /> */}
+            
+            
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  textAlign: 'center',
+                  py: 1,
+                  px: 1,
+                  fontSize: '0.875rem',
+                  fontWeight: 'normal',
+                  opacity: isNavCollapsed ? 0 : 1,
+                  transition: 'opacity 0.3s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                入门组
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  动画
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  画图
+                </Button>
+              </Box>
+            </Box>
+
+            {/* 组2 */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  textAlign: 'center',
+                  py: 1,
+                  px: 1,
+                  fontSize: '0.875rem',
+                  fontWeight: 'normal',
+                  opacity: isNavCollapsed ? 0 : 1,
+                  transition: 'opacity 0.3s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                普及组
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  动画
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  画图 
+                </Button>
+              </Box>
+            </Box>
+
+            {/* 组3 */}
+            {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  textAlign: 'center',
+                  py: 1,
+                  px: 1,
+                  fontSize: '0.875rem',
+                  fontWeight: 'normal',
+                  opacity: isNavCollapsed ? 0 : 1,
+                  transition: 'opacity 0.3s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                组3
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  C1D2
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  C2D1
+                </Button>
+              </Box>
+            </Box> */}
+
+            {/* 组4 */}
+            {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  textAlign: 'center',
+                  py: 1,
+                  px: 1,
+                  fontSize: '0.875rem',
+                  fontWeight: 'normal',
+                  opacity: isNavCollapsed ? 0 : 1,
+                  transition: 'opacity 0.3s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                组4
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  C2D1
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    fontSize: '0.75rem',
+                    py: 0.5,
+                    px: 1,
+                    minHeight: '20px',
+                    textTransform: 'none',
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  C1D2
+                </Button>
+              </Box>
+            </Box> */}
+          </Box>
+        </Box>
+      </Box>
+
+      {/* 内容区域 */}
+      <div className="flex-1 flex">
+        {/* 左侧内容 */}
       <div className="w-2/5 relative bg-gray-100">
         <MarkdownWithDrawing markdown={selectedText} />
       </div>
 
-      {/* Right side */}
-      <div className="w-3/5 bg-white relative">
+        {/* 右侧内容 */}
+      <div
+        className="w-3/5 bg-white relative"
+        ref={rightPaneRef}
+        style={{
+          touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
+          overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
+          overflow: 'hidden',            // 避免绘制时容器产生滚动条
+          contain: 'layout paint',       // 限定重绘范围，减少抖动
+        }}
+      >
       {/* 右栏悬浮按钮组 */}
-        {/* <Box
+        <Box
           position="absolute"
-          top={8}
-          left={100}            // ✅ 靠左
+          top={19}
+          left={300}            // ✅ 靠左
           zIndex={10}
           bgcolor="rgba(255,255,255,0.9)"
           borderRadius={1}
-          boxShadow={1}
+          // boxShadow={1}
           display="flex"
           gap={1}
         >
-          <Tooltip title="Check (save this step)">
+          {/* <Tooltip title="Check (save this step)">
             <IconButton color="primary" onClick={onCheck}>
               <CheckIcon />
             </IconButton>
@@ -695,58 +2234,750 @@ export default function Home() {
             <IconButton color="success" onClick={onNextDraw}>
               <Lightbulb />
             </IconButton>
-          </Tooltip>
-        </Box> */}
+          </Tooltip> */}
+          {/* <Tooltip title="Insert fixed rectangle">
+            <IconButton color="inherit" onClick={insertFixedRectangle}>
+              <CropSquareIcon />
+            </IconButton>
+          </Tooltip> */}
+        </Box>
 
-        {/* Mode切换按钮 - 放在画布上 */}
+        {/* 覆盖 Excalidraw 左侧原生导航（工具栏）
         <Box
           sx={{
             position: 'absolute',
-            top: 16,
-            left: 16,
-            zIndex: 10,
-            bgcolor: 'rgba(255,255,255,0.95)',
-            borderRadius: 2,
-            boxShadow: 3,
-            p: 1,
-            border: '1px solid #e0e0e0',
+            top: 0,
+            left: 0,
+            width: 88,
+            height: '100%',
+            bgcolor: '#fff',
+            zIndex: 20,
+            pointerEvents: 'auto', // 阻止点击到原生导航
+          }}
+        /> */}
+
+        {/* 遮挡 Excalidraw 左上角菜单按钮的白色遮挡物 */}
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 6,
+            left: 6,
+            width: 64,
+            height: 64,
+            bgcolor: '#fff',
+            borderRadius: 1,
+            zIndex: 20,
+            pointerEvents: 'auto', // 阻止点击到底层按钮
+          }}
+        />
+
+        {/* 遮挡 Excalidraw 右上角的 Library 按钮 */}
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            width: 120,
+            height: 64,
+            bgcolor: '#fff',
+            borderRadius: 1,
+            zIndex: 20,
+            pointerEvents: 'auto',
+          }}
+        />
+
+        {/* 覆盖 Excalidraw 顶部中间原生工具栏 */}
+        {/* <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '70%',
+            height: 64,
+            bgcolor: '#fff',
+            zIndex: 20,
+            pointerEvents: 'auto',
+            borderBottomLeftRadius: 6,
+            borderBottomRightRadius: 6,
+          }}
+        /> */}
+
+        {/* 自定义简化工具栏（顶部居中，横向排列） */}
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            bgcolor: 'rgba(255,255,255,1)',
+            borderRadius: 1,
+            p: 0.5,
+            display: 'flex',
+            flexDirection: 'row',
+            gap: 1.25,
+            width: 560,
+            height: 71,
           }}
         >
-          <Box sx={{ mb: 1, textAlign: 'center' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-              模式
-            </Typography>
-          </Box>
-          <ToggleButtonGroup
-            value={mode}
-            exclusive
-            orientation="vertical"
-            onChange={(_, newMode) => {
-              if (newMode !== null) {
-                setMode(newMode);
-                // 切换mode时重置一些状态
-                if (newMode === 'explore') {
-                  setCurrentStepText('');
-                  setCurrentStepIndex(0);
-                }
-              }
-            }}
-            size="small"
-          >
-            <ToggleButton value="story" sx={{ px: 2, py: 1 }}>
-              <Book sx={{ mr: 1, fontSize: 16 }} />
-              故事模式
-            </ToggleButton>
-            <ToggleButton value="explore" sx={{ px: 2, py: 1 }}>
-              <Explore sx={{ mr: 1, fontSize: 16 }} />
-              探索模式
-            </ToggleButton>
-          </ToggleButtonGroup>
+          <Tooltip title="模式">
+            <IconButton size="large" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <TuneIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="移动">
+            <IconButton size="large" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <PanToolIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="选择">
+            <IconButton size="large" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <NavigationIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="矩形">
+            <IconButton size="large" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <CropSquareIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="椭圆">
+            <IconButton size="large" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <CircleOutlinedIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="箭头">
+            <IconButton size="large" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <ArrowRightAltIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="连线">
+            <IconButton size="large" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <HorizontalRuleIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="自由绘制">
+            <IconButton size="large" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <CreateIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="文字">
+            <IconButton size="large" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <TextFieldsIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="橡皮擦">
+            <IconButton size="large" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <EraserIcon sx={{ fontSize: 44, position: 'relative', top: -2 }} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="素材库">
+            <IconButton size="large" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <SchemaIcon fontSize="large" />
+            </IconButton>
+          </Tooltip>
         </Box>
 
-        <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} />
+        {/* 模式选择弹窗（美观卡片样式） */}
+        <Modal open={isModeDialogOpen} onClose={() => setIsModeDialogOpen(false)}>
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              bgcolor: '#fff',
+              borderRadius: 3,
+              boxShadow: 10,
+              p: 3,
+              minWidth: 560,
+            }}
+          >
+            <Typography variant="h6" sx={{ mb: 2, textAlign: 'center', fontWeight: 600 }}>选择模式</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <Box
+                onClick={() => changeMode('story')}
+                sx={{
+                  p: 2,
+                  border: '1px solid #e0e0e0',
+                  borderRadius: 2,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  '&:hover': { boxShadow: 3, borderColor: '#cfcfcf', transform: 'translateY(-2px)' },
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Book sx={{ fontSize: 28, color: 'primary.main' }} />
+                  <Typography variant="subtitle1" fontWeight={600}>故事模式</Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  按步骤完成链表题目，AI 提示与检查随时辅助。
+                </Typography>
+              </Box>
+              <Box
+                onClick={() => changeMode('explore')}
+                sx={{
+                  p: 2,
+                  border: '1px solid #e0e0e0',
+                  borderRadius: 2,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  '&:hover': { boxShadow: 3, borderColor: '#cfcfcf', transform: 'translateY(-2px)' },
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Explore sx={{ fontSize: 28, color: 'secondary.main' }} />
+                  <Typography variant="subtitle1" fontWeight={600}>探索模式</Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  自由绘画，随时获取 AI 提示与检查。
+                </Typography>
+              </Box>
+            </Box>
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Button variant="outlined" size="small" onClick={() => setIsModeDialogOpen(false)}>关闭</Button>
+            </Box>
+          </Box>
+        </Modal>
+
+        <Excalidraw 
+          excalidrawAPI={(api) => setExcalidrawAPI(api)}
+          onChange={(elements, appState, files) => {
+            // 实时保存画布变化
+            if (api) {
+              // console.log(`🎨 Excalidraw onChange 事件 - 模式: ${mode}, 元素数: ${elements.length}`);
+              // 若存在 AI Ghost，用户一旦作画（元素数量增加）则清除 Ghost
+              try {
+                if (aiGhostActiveRef.current && elements.length > lastElementsCountRef.current) {
+                  setAiGhost(null);
+                  aiGhostActiveRef.current = false;
+                }
+              } catch {}
+              // 使用防抖保存，避免频繁保存
+              if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current);
+              }
+              autoSaveTimerRef.current = setTimeout(() => {
+                // 只有在正确的模式下才保存，并且确保不是正在切换模式
+                if ((mode === 'story' || mode === 'explore') && !isModeSwitching.current) {
+                  // console.log(`💾 自动保存 - 模式: ${mode}`);
+                saveCurrentScene();
+                } else {
+                  // console.log(`⚠️ 跳过自动保存 - 模式: ${mode}, 是否正在切换: ${isModeSwitching.current}`);
+                }
+              }, 300); // 300ms 后保存
+            }
+          }}
+          // 移动设备适配配置
+         
+          UIOptions={{
+            tools: { image: false },               // 隐藏工具（移除不受支持的 'line' 字段）
+            // canvasActions: {
+            //   saveToActiveFile: true,
+            //   loadScene: false,
+            //   export: false,
+            //   saveAsImage: false,
+            //   clearCanvas: true,
+            // },
+            dockedSidebarBreakpoint: 100000, // 移动设备上不显示侧边栏
+            welcomeScreen: false, // 禁用欢迎屏幕
+          }}
+          // 触摸设备优化
+          gridModeEnabled={false} // 移动设备上禁用网格模式
+          zenModeEnabled={false} // 移动设备上禁用禅模式
+          viewModeEnabled={false} // 移动设备上禁用视图模式
+          // 移动设备特定的应用状态
+          initialData={{
+            appState: {
+              viewBackgroundColor: "#fff",
+              // 移动设备上禁用一些功能
+              showWelcomeScreen: false,
+              // 触摸设备优化
+              penMode: false,
+              gridSize: undefined,
+            },
+            scrollToContent: true
+          }}
+        />
+
+        {/* 画布点击插入覆盖层：仅在待插入模式开启时显示 */}
+        {pendingInsertTool === 'rectangle' && (
+          <Box
+            onClick={async (e) => {
+              if (!excalidrawAPI) return;
+              try {
+                const appState = excalidrawAPI.getAppState();
+                const scrollX = (appState && (appState as any).scrollX) || 0;
+                const scrollY = (appState && (appState as any).scrollY) || 0;
+                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                const rect = rightPaneRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                const clientX = (e as any).clientX as number;
+                const clientY = (e as any).clientY as number;
+                const sceneX = scrollX + (clientX - rect.left) / zoom;
+                const sceneY = scrollY + (clientY - rect.top) / zoom;
+                await insertFixedRectangleAt(sceneX, sceneY);
+              } finally {
+                setPendingInsertTool(null);
+                setInsertGhost(null);
+                // 插入后切回选择工具
+                (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
+              }
+            }}
+            onMouseMove={(e) => {
+              if (!excalidrawAPI) return;
+              const appState = excalidrawAPI.getAppState();
+              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+              const rect = rightPaneRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const clientX = (e as any).clientX as number;
+              const clientY = (e as any).clientY as number;
+              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+            }}
+            onMouseLeave={() => setInsertGhost(null)}
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 40,
+              cursor: 'crosshair',
+              background: 'transparent',
+            }}
+          />
+        )}
+
+        {/* Ghost 预览矩形（仅在 pendingInsertTool=rectangle 时显示） */}
+        {pendingInsertTool === 'rectangle' && insertGhost && (
+          <Box
+            sx={{
+              position: 'absolute',
+              zIndex: 41,
+              pointerEvents: 'none',
+              border: '2px dashed #666',
+              backgroundColor: 'rgba(0,0,0,0.02)',
+              top: insertGhost.y - (50 * insertGhost.zoom) / 2,
+              left: insertGhost.x - (50 * insertGhost.zoom) / 2,
+              width: 50 * insertGhost.zoom,
+              height: 50 * insertGhost.zoom,
+              borderRadius: 2,
+            }}
+          />
+        )}
+
+        {/* 画布点击插入覆盖层：椭圆（默认圆形） */}
+        {pendingInsertTool === 'ellipse' && (
+          <Box
+            onClick={async (e) => {
+              if (!excalidrawAPI) return;
+              try {
+                const appState = excalidrawAPI.getAppState();
+                const scrollX = (appState && (appState as any).scrollX) || 0;
+                const scrollY = (appState && (appState as any).scrollY) || 0;
+                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                const rect = rightPaneRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                const clientX = (e as any).clientX as number;
+                const clientY = (e as any).clientY as number;
+                const sceneX = scrollX + (clientX - rect.left) / zoom;
+                const sceneY = scrollY + (clientY - rect.top) / zoom;
+                await insertFixedEllipseAt(sceneX, sceneY);
+              } finally {
+                setPendingInsertTool(null);
+                setInsertGhost(null);
+                // 插入后切回选择工具
+                (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
+              }
+            }}
+            onMouseMove={(e) => {
+              if (!excalidrawAPI) return;
+              const appState = excalidrawAPI.getAppState();
+              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+              const rect = rightPaneRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const clientX = (e as any).clientX as number;
+              const clientY = (e as any).clientY as number;
+              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+            }}
+            onMouseLeave={() => setInsertGhost(null)}
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 40,
+              cursor: 'crosshair',
+              background: 'transparent',
+            }}
+          />
+        )}
+
+        {/* Ghost 预览圆形（仅在 pendingInsertTool=ellipse 时显示） */}
+        {pendingInsertTool === 'ellipse' && insertGhost && (
+          <Box
+            sx={{
+              position: 'absolute',
+              zIndex: 41,
+              pointerEvents: 'none',
+              border: '2px dashed #666',
+              backgroundColor: 'rgba(0,0,0,0.02)',
+              top: insertGhost.y - (50 * insertGhost.zoom) / 2,
+              left: insertGhost.x - (50 * insertGhost.zoom) / 2,
+              width: 50 * insertGhost.zoom,
+              height: 50 * insertGhost.zoom,
+              borderRadius: '50%',
+            }}
+          />
+        )}
+
+        {/* 底部素材库面板 */}
+        {showLibraryBottom && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              bottom: 80,
+              transform: 'translateX(-50%)',
+              zIndex: 35,
+              bgcolor: 'rgba(255,255,255,0.98)',
+              borderRadius: 1,
+              boxShadow: 3,
+              p: 1,
+              width: '80%',
+              maxWidth: 900,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>素材库</Typography>
+              <Button size="small" onClick={() => setShowLibraryBottom(false)}>关闭</Button>
+            </Box>
+            <Box sx={{
+              display: 'grid',
+              gridAutoFlow: 'column',
+              gridTemplateRows: 'repeat(2, auto)',
+              gap: 1,
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              p: 0.5,
+              alignItems: 'start'
+            }}>
+              {libraryItems && libraryItems.length > 0 ? (
+                libraryItems.slice().reverse().map((item: any, idx: number) => {
+                  const origIdx = libraryItems.length - 1 - idx;
+                  const thumbId = String(item?.id ?? `item-${origIdx}`);
+                  return (
+                  <Box key={thumbId} sx={{ textAlign: 'center', width: 120 }}>
+                    <LibraryItemThumb
+                      item={item}
+                      thumbId={thumbId}
+                      width={110}
+                      height={72}
+                      onClick={() => {
+                        setPendingLibraryItem(item);
+                        // 预计算素材包围盒，用于 Ghost 预览
+                        try {
+                          const els: any[] = item?.elements || [];
+                          if (els.length) {
+                            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                            for (const el of els) {
+                              const x = typeof el.x === 'number' ? el.x : 0;
+                              const y = typeof el.y === 'number' ? el.y : 0;
+                              const w = typeof el.width === 'number' ? el.width : 0;
+                              const h = typeof el.height === 'number' ? el.height : 0;
+                              minX = Math.min(minX, x);
+                              minY = Math.min(minY, y);
+                              maxX = Math.max(maxX, x + w);
+                              maxY = Math.max(maxY, y + h);
+                            }
+                            const w = Math.max(1, maxX - minX);
+                            const h = Math.max(1, maxY - minY);
+                            // 归一化元素到局部坐标系（以 minX/minY 为原点）
+                            const mapped = els.map((el: any) => {
+                              const x = (el.x ?? 0) - minX;
+                              const y = (el.y ?? 0) - minY;
+                              return {
+                                type: el.type,
+                                x, y,
+                                width: el.width ?? 0,
+                                height: el.height ?? 0,
+                                points: Array.isArray(el.points) ? el.points : undefined,
+                                text: el.text,
+                                fontSize: el.fontSize ?? 18,
+                                strokeColor: el.strokeColor ?? '#000',
+                                backgroundColor: el.backgroundColor ?? 'transparent',
+                                strokeWidth: el.strokeWidth ?? 2,
+                                strokeStyle: el.strokeStyle ?? 'solid',
+                              };
+                            });
+                            setLibraryGhost({ width: w, height: h, minX, minY, elements: mapped });
+                          } else {
+                            setLibraryGhost(null);
+                          }
+                        } catch {
+                          setLibraryGhost(null);
+                        }
+                        setShowLibraryBottom(false);
+                      }}
+                    />
+                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5, maxWidth: 110 }} noWrap>
+                      {libraryCaptions[origIdx] ?? item?.name ?? `Item ${origIdx + 1}`}
+                    </Typography>
+                  </Box>
+                );})
+              ) : (
+                <Typography variant="caption" color="text.secondary">暂无素材</Typography>
+              )}
+            </Box>
+          </Box>
+        )}
+
+        {/* 库项点击后在画布点击位置插入 */}
+        {pendingLibraryItem && (
+          <Box
+            onClick={async (e) => {
+              if (!excalidrawAPI) return;
+              try {
+                const appState = excalidrawAPI.getAppState();
+                const scrollX = (appState && (appState as any).scrollX) || 0;
+                const scrollY = (appState && (appState as any).scrollY) || 0;
+                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                const rect = rightPaneRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                const clientX = (e as any).clientX as number;
+                const clientY = (e as any).clientY as number;
+                const sceneX = scrollX + (clientX - rect.left) / zoom;
+                const sceneY = scrollY + (clientY - rect.top) / zoom;
+
+                // 计算库元素的包围盒，居中插入
+                const elements: any[] = pendingLibraryItem?.elements || [];
+                if (!elements.length) return;
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const el of elements) {
+                  if (typeof el.x === 'number' && typeof el.y === 'number') {
+                    minX = Math.min(minX, el.x);
+                    minY = Math.min(minY, el.y);
+                    const w = typeof el.width === 'number' ? el.width : 0;
+                    const h = typeof el.height === 'number' ? el.height : 0;
+                    maxX = Math.max(maxX, el.x + w);
+                    maxY = Math.max(maxY, el.y + h);
+                  }
+                }
+                const cx = (minX + maxX) / 2;
+                const cy = (minY + maxY) / 2;
+                const dx = sceneX - cx;
+                const dy = sceneY - cy;
+                const cloned = elements.map((el: any) => ({ ...el, x: el.x + dx, y: el.y + dy }));
+
+                excalidrawAPI.updateScene({
+                  elements: [...excalidrawAPI.getSceneElements(), ...cloned as any],
+                });
+                saveCurrentScene();
+              } finally {
+                setPendingLibraryItem(null);
+                setLibraryGhost(null);
+              }
+            }}
+            onMouseMove={(e) => {
+              if (!excalidrawAPI) return;
+              const appState = excalidrawAPI.getAppState();
+              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+              const rect = rightPaneRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const clientX = (e as any).clientX as number;
+              const clientY = (e as any).clientY as number;
+              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+            }}
+            onMouseLeave={() => setInsertGhost(null)}
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 40,
+              cursor: 'crosshair',
+              background: 'transparent',
+            }}
+          />
+        )}
+        {/* Ghost 预览素材（完整形状渲染） */}
+        {pendingLibraryItem && insertGhost && libraryGhost && (
+          <Box
+            sx={{ position: 'absolute', zIndex: 41, pointerEvents: 'none', top: 0, left: 0, right: 0, bottom: 0 }}
+          >
+            <svg
+              width={libraryGhost.width * insertGhost.zoom}
+              height={libraryGhost.height * insertGhost.zoom}
+              viewBox={`0 0 ${libraryGhost.width} ${libraryGhost.height}`}
+              style={{
+                position: 'absolute',
+                top: insertGhost.y - (libraryGhost.height * insertGhost.zoom) / 2,
+                left: insertGhost.x - (libraryGhost.width * insertGhost.zoom) / 2,
+                overflow: 'visible',
+                opacity: 0.9,
+              }}
+            >
+              <defs>
+                <marker id="lib-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L10,5 L0,10 z" fill="#666" />
+                </marker>
+              </defs>
+              {libraryGhost.elements.map((el, idx) => {
+                const stroke = el.strokeColor || '#000';
+                const fill = el.backgroundColor && el.backgroundColor !== 'transparent' ? el.backgroundColor : 'none';
+                const sw = Math.max(1, el.strokeWidth || 2);
+                const dash = el.strokeStyle === 'dashed' ? '6,4' : el.strokeStyle === 'dotted' ? '2,4' : undefined;
+                if (el.type === 'rectangle' || el.type === 'image') {
+                  return (
+                    <rect key={idx} x={el.x} y={el.y} width={el.width} height={el.height} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
+                  );
+                }
+                if (el.type === 'ellipse') {
+                  return (
+                    <ellipse key={idx} cx={el.x + el.width / 2} cy={el.y + el.height / 2} rx={el.width / 2} ry={el.height / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
+                  );
+                }
+                if (el.type === 'diamond') {
+                  const points = [
+                    [el.x + el.width / 2, el.y],
+                    [el.x + el.width, el.y + el.height / 2],
+                    [el.x + el.width / 2, el.y + el.height],
+                    [el.x, el.y + el.height / 2],
+                  ];
+                  return (
+                    <polygon key={idx} points={points.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
+                  );
+                }
+                if (el.type === 'line' || el.type === 'arrow') {
+                  const baseX = el.x;
+                  const baseY = el.y;
+                  const pts: [number, number][] = Array.isArray(el.points) && el.points.length ? el.points.map((p: [number, number]) => [baseX + p[0], baseY + p[1]]) : [[baseX, baseY], [baseX + (el.width || 0), baseY + (el.height || 0)]];
+                  return (
+                    <polyline key={idx} points={pts.map(p => p.join(',')).join(' ')} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd={el.type === 'arrow' ? 'url(#lib-ghost-arrow)' : undefined} />
+                  );
+                }
+                if (el.type === 'text' && el.text) {
+                  return (
+                    <text key={idx} x={el.x} y={el.y + (el.fontSize || 18)} fontSize={el.fontSize || 18} fill={stroke}>
+                      {el.text}
+                    </text>
+                  );
+                }
+                return null;
+              })}
+            </svg>
+          </Box>
+        )}
         {/* <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} /> */}
         
+        {/* 调试信息显示 */}
+        {/* <Box
+          sx={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            bgcolor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+            px: 2,
+            py: 1,
+            fontSize: '0.75rem',
+            color: 'text.secondary',
+            zIndex: 100,
+            opacity: 0.8,
+            maxWidth: 350,
+          }}
+        > */}
+          {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Box>🔍 调试信息</Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              模式: {mode} | 步骤: {mode === 'story' ? currentStepIndex + 1 : '探索'}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              故事模式场景数: {Object.keys(scenes).length}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              当前步骤: {currentStepIndexRef.current + 1}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              当前步骤元素数: {scenes[currentStepIndexRef.current]?.elements?.length || 0}
+          </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              探索模式元素数: {exploreModeCanvas.elements.length}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              当前画布元素数: {excalidrawAPI?.getSceneElements()?.length || 0}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              最后保存模式: {debugInfo.lastSavedMode}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              最后保存步骤: {debugInfo.lastSavedStoryStep}
+            </Box>
+            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              最后保存探索元素: {debugInfo.lastSavedExploreElements}
+            </Box>
+          </Box> */}
+        {/* </Box> */}
+        
+        {/* 移动设备提示 */}
+        {/* {(isMobile || isTablet) && (
+          <Box
+            sx={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              bgcolor: 'warning.light',
+              color: 'warning.contrastText',
+              p: 2,
+              borderRadius: 2,
+              zIndex: 1000,
+              textAlign: 'center',
+              maxWidth: '90vw',
+              boxShadow: 3,
+              // 移动设备特定样式
+              ...(isTablet && {
+                fontSize: '1.1rem',
+                p: 3,
+                maxWidth: '80vw',
+              }),
+              ...(isMobile && {
+                fontSize: '0.9rem',
+                p: 1.5,
+                maxWidth: '95vw',
+              }),
+            }}
+          >
+            <Typography variant="h6" gutterBottom>
+              📱 移动设备提示
+            </Typography>
+            <Typography variant="body2">
+              {isTablet ? 'iPad' : '手机'} 用户请注意：
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              • 白板功能在触摸设备上可能有限制
+            </Typography>
+            <Typography variant="body2">
+              • 建议使用手指或触控笔进行绘制
+            </Typography>
+            <Typography variant="body2">
+              • 如果遇到问题，请尝试刷新页面
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => window.location.reload()}
+              sx={{ mt: 2 }}
+            >
+              刷新页面
+            </Button>
+          </Box>
+        )} */}
+
         {/* 根据mode显示不同的组件 */}
         {mode === 'story' ? (
           <StoryPlayer 
@@ -756,13 +2987,189 @@ export default function Home() {
             setStepStatuses={setStepStatuses}
             onCheck={onCheck}
             onNextDraw={onNextDraw}
+            notes={notes}
+            isNotesOpen={isNotesOpen}
+            stepNotes={stepNotes}
+            currentStepIndex={currentStepIndex}
+            stepChecks={stepChecks}
+            containerRef={rightPaneRef}
           />
                  ) : (
            <ExploreMode 
              onCheck={onCheck}
              onNextDraw={onNextDraw}
+             notes={notes}
+             containerRef={rightPaneRef}
            />
          )}
+
+        {/* AI 新增元素闪烁动画层（仅显示 1.2s） */}
+        {aiFlash && excalidrawAPI && (
+          <Box
+            sx={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              zIndex: 42, pointerEvents: 'none',
+              '@keyframes aiPulse': {
+                '0%': { opacity: 0, transform: 'scale(0.98)' },
+                '15%': { opacity: 1, transform: 'scale(1)' },
+                '100%': { opacity: 0, transform: 'scale(1)' },
+              },
+            }}
+          >
+            {(() => {
+              const app = excalidrawAPI.getAppState?.() as any;
+              const scrollX = (app && app.scrollX) || 0;
+              const scrollY = (app && app.scrollY) || 0;
+              const zoom = (app && (app.zoom?.value ?? app.zoom)) || 1;
+              const { width, height } = aiFlash.canvas;
+              const { x: offX, y: offY } = aiFlash.offset;
+              const toScene = (xn: number, yn: number) => ({ x: offX + xn * width, y: offY + yn * height });
+              const bbox = {
+                top: (offY - scrollY) * zoom,
+                left: (offX - scrollX) * zoom,
+                width: width * zoom,
+                height: height * zoom,
+              };
+              return (
+                <svg
+                  width={bbox.width}
+                  height={bbox.height}
+                  viewBox={`0 0 ${width} ${height}`}
+                  style={{ position: 'absolute', top: bbox.top, left: bbox.left, filter: 'drop-shadow(0 0 6px rgba(0,200,0,0.6))', animation: 'aiPulse 1200ms ease-out both' }}
+                >
+                  <defs>
+                    <marker id="ai-flash-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L10,5 L0,10 z" fill="#00c853" />
+                    </marker>
+                  </defs>
+                  {aiFlash.elements.map((el: any, idx: number) => {
+                    const stroke = el?.style?.strokeColor || '#00c853';
+                    const fill = el?.style?.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : 'none';
+                    const sw = Math.max(2, (el?.style?.strokeWidth ?? 2) + 1);
+                    const dash = el?.style?.strokeStyle === 'dashed' ? '6,4' : el?.style?.strokeStyle === 'dotted' ? '2,4' : undefined;
+                    if (el.type === 'rectangle' || el.type === 'image') {
+                      const p = toScene(el.x_norm, el.y_norm);
+                      const w = Math.max(1, el.w_norm * width);
+                      const h = Math.max(1, el.h_norm * height);
+                      return <rect key={idx} x={p.x - offX} y={p.y - offY} width={w} height={h} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'ellipse') {
+                      const p = toScene(el.x_norm, el.y_norm);
+                      const w = Math.max(1, el.w_norm * width);
+                      const h = Math.max(1, el.h_norm * height);
+                      return <ellipse key={idx} cx={p.x - offX + w / 2} cy={p.y - offY + h / 2} rx={w / 2} ry={h / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'diamond') {
+                      const p = toScene(el.x_norm, el.y_norm);
+                      const w = Math.max(1, el.w_norm * width);
+                      const h = Math.max(1, el.h_norm * height);
+                      const pts = [
+                        [p.x - offX + w / 2, p.y - offY],
+                        [p.x - offX + w, p.y - offY + h / 2],
+                        [p.x - offX + w / 2, p.y - offY + h],
+                        [p.x - offX, p.y - offY + h / 2],
+                      ];
+                      return <polygon key={idx} points={pts.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'arrow') {
+                      const s = toScene(el.x_norm, el.y_norm);
+                      const e = toScene(el.end_x_norm, el.end_y_norm);
+                      return <line key={idx} x1={s.x - offX} y1={s.y - offY} x2={e.x - offX} y2={e.y - offY} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd="url(#ai-flash-arrow)" />;
+                    }
+                    if (el.type === 'line' || el.type === 'draw') {
+                      const pts = (el.points || []).map((pt: any) => {
+                        const p = toScene(pt.x_norm, pt.y_norm);
+                        return `${p.x - offX},${p.y - offY}`;
+                      }).join(' ');
+                      return <polyline key={idx} points={pts} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'text') {
+                      const p = toScene(el.x_norm, el.y_norm);
+                      return <text key={idx} x={p.x - offX} y={p.y - offY} fontSize={(el.fontSize ?? 20)} fill={stroke} opacity={0.9}>{el.text}</text>;
+                    }
+                    return null;
+                  })}
+                </svg>
+              );
+            })()}
+          </Box>
+         )}
+
+         {/* AI Ghost 叠加层（持久显示，直到用户开始绘制或切换） */}
+         {aiGhost && excalidrawAPI && (
+          <Box
+            sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 41, pointerEvents: 'none' }}
+          >
+            {(() => {
+              const { width, height } = aiGhost.canvas;
+              const bbox = { top: 12, left: 12, width, height };
+              const toLocal = (xn: number, yn: number) => ({ x: xn * width, y: yn * height });
+              return (
+                <svg
+                  width={bbox.width}
+                  height={bbox.height}
+                  viewBox={`0 0 ${width} ${height}`}
+                  style={{ position: 'absolute', top: bbox.top, left: bbox.left, opacity: 0.5 }}
+                >
+                  <defs>
+                    <marker id="ai-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L10,5 L0,10 z" fill="#00c853" />
+                    </marker>
+                  </defs>
+                  {aiGhost.elements.map((el: any, idx: number) => {
+                    const stroke = el?.style?.strokeColor || '#00c853';
+                    const fill = el?.style?.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : 'none';
+                    const sw = Math.max(2, (el?.style?.strokeWidth ?? 2));
+                    const dash = '6,4';
+                    if (el.type === 'rectangle' || el.type === 'image') {
+                      const p = toLocal(el.x_norm, el.y_norm);
+                      const w = Math.max(1, el.w_norm * width);
+                      const h = Math.max(1, el.h_norm * height);
+                      return <rect key={idx} x={p.x} y={p.y} width={w} height={h} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'ellipse') {
+                      const p = toLocal(el.x_norm, el.y_norm);
+                      const w = Math.max(1, el.w_norm * width);
+                      const h = Math.max(1, el.h_norm * height);
+                      return <ellipse key={idx} cx={p.x + w / 2} cy={p.y + h / 2} rx={w / 2} ry={h / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'diamond') {
+                      const p = toLocal(el.x_norm, el.y_norm);
+                      const w = Math.max(1, el.w_norm * width);
+                      const h = Math.max(1, el.h_norm * height);
+                      const pts = [
+                        [p.x + w / 2, p.y],
+                        [p.x + w, p.y + h / 2],
+                        [p.x + w / 2, p.y + h],
+                        [p.x, p.y + h / 2],
+                      ];
+                      return <polygon key={idx} points={pts.map(pt => pt.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'arrow') {
+                      const s = toLocal(el.x_norm, el.y_norm);
+                      const e = toLocal(el.end_x_norm, el.end_y_norm);
+                      return <line key={idx} x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd="url(#ai-ghost-arrow)" />;
+                    }
+                    if (el.type === 'line' || el.type === 'draw') {
+                      const pts = (el.points || []).map((pt: any) => {
+                        const p = toLocal(pt.x_norm, pt.y_norm);
+                        return `${p.x},${p.y}`;
+                      }).join(' ');
+                      return <polyline key={idx} points={pts} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />;
+                    }
+                    if (el.type === 'text') {
+                      const p = toLocal(el.x_norm, el.y_norm);
+                      return <text key={idx} x={p.x} y={p.y} fontSize={(el.fontSize ?? 20)} fill={stroke} opacity={0.9}>{el.text}</text>;
+                    }
+                    return null;
+                  })}
+                </svg>
+              );
+            })()}
+          </Box>
+         )}
+
+
 
         {/* {excalidrawAPI && (
           <StoryPlayer
@@ -775,41 +3182,16 @@ export default function Home() {
               const savedStep = savedSteps.find(step => step.index === index);
               if (savedStep) {
                 excalidrawAPI.updateScene({
-                  elements: savedStep.elements,
+                  elements: Array.from(savedStep.elements) as any[],
                   files: savedStep.files,
                 });
               }
             }}
           />
         )} */}
+        </div>
       </div>
-      {/* Notes Modal */}
-        {isNotesOpen && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 400,
-            bgcolor: 'background.paper',
-            boxShadow: 24,
-            p: 4,
-            borderRadius: 2,
-            zIndex: 1000,
-          }}
-        >
-          <Typography variant="h6" component="h2">
-            提示
-          </Typography>
-          <Typography sx={{ mt: 2 }}>
-            {notes}
-          </Typography>
-          <Button onClick={handleNotesClose} variant="contained" color="primary" sx={{ mt: 2 }}>
-            Close
-          </Button>
-        </Box>
-      )}
+      {/* Notes功能已集成到Story卡片中，不再需要单独的Modal */}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { Stage, Layer, Line } from 'react-konva'
 import rehypeRaw from 'rehype-raw'
 import MergeAnimationViewer from './MergeAnimationViewer'
 import { Box, Button, IconButton, Tooltip } from '@mui/material'
-import { Visibility, Edit, Delete } from '@mui/icons-material'
+import { Visibility, Edit, Delete, InfoOutlined } from '@mui/icons-material'
 
 interface Props { markdown: string }
 
@@ -81,7 +81,12 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
             />
           </Box>
         )
-      if (props.className === 'merge-animation-slot') return <MergeAnimationViewer />
+      if (props.className === 'merge-animation-slot')
+        return (
+          <Box sx={{ position: 'relative', zIndex: 20 }}>
+            <MergeAnimationViewer />
+          </Box>
+        )
       return <div {...props} />
     },
 
@@ -100,13 +105,14 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
       const isSelected = selectedKey === key
 
       return (
-        <details style={{ marginBottom: 12 }}>
+        <details open style={{ marginBottom: 12, userSelect: 'text' }}>
           <summary
             style={{
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              userSelect: 'none',
+              userSelect: 'text', // 允许文本选择
+              listStyle: 'none', // 移除默认的箭头
             }}
           >
             {summary}
@@ -136,33 +142,47 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
   // console.log('problem', problem)
   // console.log('example', example)
   return (
-    <Box position="relative" width="100%" height="100vh" bgcolor="#fafafa">
+    <Box position="relative" width="100%" height="100vh" bgcolor="#fafafa" sx={{ userSelect: 'text' }}>
       {/* 工具栏悬浮在卡片左上角 */}
       <Box
         position="absolute"
-        top={8}
-        left={8}
+        top={20}
+        left={20}
         zIndex={20}
         bgcolor="rgba(255,255,255,0.8)"
         borderRadius={1}
         boxShadow={1}
+        display="flex"
+        alignItems="center"
+        gap={0.5}
+        px={0.5}
       >
-        <Tooltip title="View">
+        <Tooltip title="查看">
           <IconButton color={mode === 'view' ? 'primary' : 'default'} onClick={() => setMode('view')}>
             <Visibility fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Draw">
+        <Tooltip title="标注">
           <IconButton color={mode === 'draw' ? 'success' : 'default'} onClick={() => setMode('draw')}>
             <Edit fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Clear">
+        <Tooltip title="清空">
           <IconButton color="error" onClick={handleClear}>
             <Delete fontSize="small" />
           </IconButton>
         </Tooltip>
+
+        {/* 工具栏右侧内联说明 */}
+        <Box display="flex" alignItems="center" gap={0.5} ml={1} mr={0.5}
+             sx={{ color: 'text.secondary' }}>
+          <InfoOutlined sx={{ fontSize: 14 }} />
+          <Box sx={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+            左侧用于题目/算法描述的标注和笔迹；不会影响右侧画布
+          </Box>
+        </Box>
       </Box>
+
 
       {/* 卡片 + 画布 */}
       <Box
@@ -173,7 +193,7 @@ export default function MarkdownWithDrawing({ markdown }: Props) {
         overflow="auto"
         p={0}
       >
-        <Box p={3} pt={6}>
+        <Box p={3} pt={6} sx={{ userSelect: 'text' }}>
           <ReactMarkdown rehypePlugins={[rehypeRaw]} components={components}>
             {injectSlots(markdown)}
           </ReactMarkdown>

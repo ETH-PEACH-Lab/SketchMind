@@ -1,0 +1,136 @@
+/* 移动设备优化样式 */
+
+/* 触摸设备优化 - 使用更精确的选择器 */
+@media (max-width: 768px) {
+  /* 优化触摸区域 */
+  .excalidraw .App-menu_top__left,
+  .excalidraw .App-menu_top__right {
+    padding: 8px !important;
+  }
+  
+  /* 增大触摸按钮 */
+  .excalidraw .App-menu_top button,
+  .excalidraw .App-menu_top .ToolIcon {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+  
+  /* 优化画布区域 */
+  .excalidraw .canvas-container {
+    touch-action: manipulation !important;
+  }
+  
+  /* 隐藏一些复杂的桌面端功能 */
+  .excalidraw .App-menu_top__left .App-menu_top__left__buttons {
+    display: none !important;
+  }
+}
+
+/* iPad 特定优化 */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .excalidraw .App-menu_top {
+    font-size: 14px !important;
+  }
+  
+  .excalidraw .App-menu_top__left,
+  .excalidraw .App-menu_top__right {
+    padding: 12px !important;
+  }
+  
+  /* 简化iPad上的工具栏 */
+  .excalidraw .App-menu_top__left .App-menu_top__left__buttons {
+    gap: 8px !important;
+  }
+}
+
+/* 触摸设备手势优化 */
+@media (pointer: coarse) {
+  .excalidraw .canvas-container {
+    touch-action: pan-x pan-y !important;
+  }
+  
+  /* 优化触摸绘制 */
+  .excalidraw .canvas-container canvas {
+    touch-action: none !important;
+  }
+  
+  /* 禁用一些触摸手势冲突的功能 */
+  .excalidraw .App-menu_top button,
+  .excalidraw .App-menu_top .ToolIcon {
+    touch-action: manipulation !important;
+  }
+}
+
+/* 移动设备视口优化 */
+@media (max-width: 1024px) {
+  .excalidraw {
+    font-size: 16px !important; /* 防止iOS缩放 */
+  }
+  
+  /* 优化触摸绘制 */
+  .excalidraw .canvas-container {
+    cursor: crosshair !important;
+  }
+  
+  /* 简化移动端界面 */
+  .excalidraw .App-menu_top {
+    height: auto !important;
+    min-height: 48px !important;
+  }
+  
+  /* 优化触摸按钮间距 */
+  .excalidraw .App-menu_top__left,
+  .excalidraw .App-menu_top__right {
+    gap: 4px !important;
+  }
+}
+
+/* 触摸设备画布优化 */
+@media (hover: none) and (pointer: coarse) {
+  .excalidraw .canvas-container {
+    /* 优化触摸绘制性能 */
+    will-change: transform !important;
+    transform: translateZ(0) !important;
+  }
+  
+  /* 确保触摸绘制区域足够大 */
+  .excalidraw .canvas-container canvas {
+    touch-action: none !important;
+  }
+  
+  /* 优化触摸工具栏 */
+  .excalidraw .App-menu_top {
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(10px) !important;
+  }
+}
+
+/* 超小屏幕设备优化 */
+@media (max-width: 480px) {
+  .excalidraw .App-menu_top {
+    padding: 4px 8px !important;
+  }
+  
+  .excalidraw .App-menu_top__left,
+  .excalidraw .App-menu_top__right {
+    gap: 2px !important;
+  }
+  
+  /* 隐藏更多复杂功能 */
+  .excalidraw .App-menu_top__right .App-menu_top__right__buttons {
+    display: none !important;
+  }
+}
+
+/* 横屏模式优化 */
+@media (max-width: 1024px) and (orientation: landscape) {
+  .excalidraw .App-menu_top {
+    height: 40px !important;
+  }
+  
+  .excalidraw .App-menu_top button,
+  .excalidraw .App-menu_top .ToolIcon {
+    min-height: 36px !important;
+    min-width: 36px !important;
+  }
+}

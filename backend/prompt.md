@@ -97,3 +97,58 @@ Circle the chosen head in red.`}
 
 OUTPUT
 - Return STRICT JSON only. No extra commentary.
+
+function buildPrompt(frameW, frameH, stepText = "") {
+  console.log('step', stepText)
+  return `
+You are an AI assistant that analyzes a linked-list diagram (PNG image; canvas width=${frameW}, height=${frameH}) 
+and proposes the NEXT step overlay ONLY.
+
+RULES
+- Return INCREMENTAL elements to draw (do not repeat what already exists in the image).
+- Coordinates are normalized to [0,1] relative to the ENTIRE canvas (not viewport).
+- Keep output minimal and strictly valid JSON.
+
+SCHEMA
+{
+  "elements": [
+    {
+      "type": "rectangle" | "ellipse" | "diamond" | "arrow" | "text ,
+      "x_norm": number,                // required; top-left for shapes, start point for arrow
+      "y_norm": number,
+      // for text
+      "text": string,                 // only for text or tag, the key word is text no label
+      // for shapes:
+      "w_norm": number,                // width normalized [0,1]
+      "h_norm": number,                // height normalized [0,1]
+      "label": string,                 // inside shapes
+      // for arrow:
+      "end_x_norm": number,            // required if type = "arrow"
+      "end_y_norm": number,
+      "style": {                       // optional
+        "strokeColor": string,         // e.g. "#ff0000"
+        "fillColor": string,           // e.g. "transparent"
+        "strokeWidth": number,
+        "endArrowhead": "triangle" | "dot" | "arrow" | "bar",  // "none" for line
+      }
+    }
+  ],
+  "notes": string                      // brief reasoning of what you added, in chinese
+}
+
+Algorithm: We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
+  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0]
+  list2[0] + merge(list1, list2[1:])  otherwise
+Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
+
+TASK
+1) Decide which new elements to draw for the next step of "merge two sorted lists".
+2) Output ONLY the incremental overlay.
+
+CURRENT STEP (hint to follow):
+Based on Algorithm, ${stepText}, Only show this step
+
+OUTPUT
+- Return STRICT JSON only. No extra commentary.
+`.trim();
+}

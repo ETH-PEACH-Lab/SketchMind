@@ -82,8 +82,22 @@ function denorm(
   y: number,
   { width, height, offsetX = 0, offsetY = 0 }: CanvasPx,
 ) {
+  // 验证输入参数
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    console.error('❌ denorm 参数无效:', { x, y, width, height, offsetX, offsetY });
+    return { x: 0, y: 0 };
+  }
+  
   // 使用浮点精度，避免提前取整导致位置误差
-  return { x: x * width + offsetX, y: y * height + offsetY };
+  const result = { x: x * width + offsetX, y: y * height + offsetY };
+  
+  // 调试坐标转换
+  console.log('🔍 denorm 坐标转换:', {
+    input: { x, y, width, height, offsetX, offsetY },
+    output: result
+  });
+  
+  return result;
 }
 
 /* ============ 4. 把 Gemini 元素 → Excalidraw Skeleton ============ */
@@ -96,6 +110,13 @@ function toSkeletons(payload: GeminiPayload, canvas: CanvasPx, P: Position) {
     console.log('elements.count', payload?.elements?.length || 0);
   } catch {}
   for (const el of payload.elements || []) {
+    console.log('🔍 处理元素:', {
+      type: el.type,
+      x_norm: el.x_norm,
+      y_norm: el.y_norm,
+      hasStyle: !!el.style
+    });
+    
     const hasAbsRect = typeof (el as any).x === 'number' && typeof (el as any).y === 'number' && (typeof (el as any).w === 'number' || typeof (el as any).width === 'number') && (typeof (el as any).h === 'number' || typeof (el as any).height === 'number');
     const hasAbsArrow = typeof (el as any).x === 'number' && typeof (el as any).y === 'number' && typeof (el as any).end_x === 'number' && typeof (el as any).end_y === 'number';
     const hasAbsText = typeof (el as any).x === 'number' && typeof (el as any).y === 'number' && (el as any).type === 'text';
@@ -241,8 +262,21 @@ export async function applyGeminiElementsToExcalidraw(
   canvas: CanvasPx,
   offset: Position
 ) {
-  if (!payload?.elements?.length) return;
-  if (typeof window === 'undefined') return; // guard against SSR
+  console.log('🚀 applyGeminiElementsToExcalidraw 开始:', {
+    hasApi: !!api,
+    payloadElementsCount: payload?.elements?.length || 0,
+    canvas,
+    offset
+  });
+  
+  if (!payload?.elements?.length) {
+    console.warn('⚠️ 没有元素需要绘制');
+    return;
+  }
+  if (typeof window === 'undefined') {
+    console.warn('⚠️ SSR 环境，跳过绘制');
+    return; // guard against SSR
+  }
 
   // 👇 dynamic import on the client only
   const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
@@ -274,6 +308,17 @@ export async function applyGeminiElementsToExcalidraw(
     console.groupEnd();
   } catch {}
 
-  if (!deduped.length) return;
+  if (!deduped.length) {
+    console.warn('⚠️ 去重后没有新元素需要添加');
+    return;
+  }
+  
+  console.log('✅ 准备更新场景:', {
+    existingCount: existing.length,
+    newElementsCount: deduped.length,
+    totalAfterUpdate: existing.length + deduped.length
+  });
+  
   api.updateScene({ elements: [...existing, ...deduped] });
+  console.log('✅ 场景更新完成');
 }

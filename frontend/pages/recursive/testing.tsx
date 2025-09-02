@@ -1,9 +1,12 @@
 import dynamic from 'next/dynamic';
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 // import StoryPlayer from '../components/StoryPlayer';
 // 顶部先引入 MUI 组件
 import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon } from '@mui/material'
-import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book, ChevronRight } from '@mui/icons-material'
+import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book } from '@mui/icons-material'
+// 追加这些组件
+import { Paper, Divider, RadioGroup, Radio, FormControlLabel, TextField, Switch } from '@mui/material';
+
 import TuneIcon from '@mui/icons-material/Tune';
 import CropSquareIcon from '@mui/icons-material/CropSquare';
 import PanToolIcon from '@mui/icons-material/PanTool';
@@ -18,11 +21,11 @@ import SchemaIcon from '@mui/icons-material/Schema';
 // import { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 // import { loadLibraryFromSVGImages } from "../utils/loadLibraryFromSVGImages";
-import { injectSvgImagesAsLibraryItems } from "../utils/loadLibraryFromSVGImages";
+import { injectSvgImagesAsLibraryItems } from "../../utils/loadLibraryFromSVGImages";
 // import { exportToBlob, exportToSvg } from '@excalidraw/excalidraw'
 // import { validateGeminiOverlayResponse } from '../utils/geminiTypes';
 // import { applyGeminiOverlayToExcalidraw } from '../utils/geminiOverlay';
-import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../utils/geminiOverlay";
+import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../../utils/geminiOverlay";
 // import { useSession } from 'next-auth/react';
 
 // const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -31,11 +34,11 @@ import { applyGeminiElementsToExcalidraw, type GeminiPayload } from "../utils/ge
 //   process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5095';
 export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? '/api';
 
-const StoryPlayer = dynamic(() => import('../components/StoryPlayer'), {
+const StoryPlayer = dynamic(() => import('../../components/StoryPlayer'), {
   ssr: false
 })
 
-const ExploreMode = dynamic(() => import('../components/ExploreMode'), {
+const ExploreMode = dynamic(() => import('../../components/ExploreMode'), {
   ssr: false
 })
 
@@ -44,7 +47,7 @@ const Excalidraw = dynamic(
   { ssr: false }
 );
 
-const MarkdownWithDrawing = dynamic(() => import('../components/MarkdownWithDrawing'), { ssr: false });
+// const MarkdownWithDrawing = dynamic(() => import('../../components/MarkdownWithDrawing'), { ssr: false });
 // const SVGWhiteboard = dynamic(() => import('../components/SVGWhiteboard'), { ssr: false });
 
 type StepScene = {
@@ -52,7 +55,233 @@ type StepScene = {
   files: any;
   appState?: any;
 };
-
+type MCQ = {
+    id: string;
+    promptEN: string;
+    promptZH: string;
+    options: { key: string; textEN: string; textZH: string }[];
+    // 不展示答案，保留结构以便后续扩展
+  };
+  
+  type OrderingQ = {
+    id: string;
+    promptEN: string;
+    promptZH: string;
+    stepsEN: string[];
+    stepsZH: string[];
+  };
+  
+  type FillBlankQ = {
+    id: string;
+    promptEN: string;
+    promptZH: string;
+    blanks: { id: string; placeholder: string }[];
+    footerEN: string;
+    footerZH: string;
+  };
+  
+  // ==== Questions content (no answers shown) ====
+  const MCQS: MCQ[] = [
+    {
+      id: 'q1',
+      promptEN: 'Q1 · What is the core recursive logic for removing elements from a linked list?',
+      promptZH: 'Q1 · 递归删除链表元素的核心逻辑是什么？',
+      options: [
+        { key: 'A', textEN: 'Traverse and directly delete all target nodes', textZH: '从头到尾遍历并直接删除所有目标值节点' },
+        { key: 'B', textEN: 'Solve the subproblem first (rest of the list), then decide whether to keep the current node', textZH: '先解决子问题（余下链表），再决定是否保留当前节点' },
+        { key: 'C', textEN: 'Loop until encountering a node equal to val, then stop', textZH: '循环直到遇到等于 val 的节点就停止' },
+        { key: 'D', textEN: 'Copy into an array, filter, rebuild the list', textZH: '复制到数组，过滤后重建链表' },
+      ],
+    },
+    {
+      id: 'q2',
+      promptEN: 'Q2 · True or False: The base case is when the list is empty (head == nullptr).',
+      promptZH: 'Q2 · 判断：递归的基本情况是链表为空（head == nullptr）。',
+      options: [
+        { key: 'T', textEN: 'True', textZH: '对' },
+        { key: 'F', textEN: 'False', textZH: '错' },
+      ],
+    },
+    {
+      id: 'q4',
+      promptEN: 'Q4 · Input: head = [6, 6, 3], val = 6. When recursion first expands, which node is processed first (the first recursive call goes to)?',
+      promptZH: 'Q4 · 输入：head = [6, 6, 3], val = 6。递归首次展开时，先处理哪个节点（首次递归调用指向的节点）？',
+      options: [
+        { key: 'A', textEN: 'The first node with value 6', textZH: '值为 6 的第一个节点' },
+        { key: 'B', textEN: 'The second node with value 6', textZH: '值为 6 的第二个节点' },
+        { key: 'C', textEN: 'The third node with value 3', textZH: '值为 3 的第三个节点' },
+        { key: 'D', textEN: 'The recursion stops immediately because head->val == 6', textZH: '由于 head->val == 6，递归立即停止' },
+      ],
+    },
+  ];
+  
+  const ORDERING_Q: OrderingQ = {
+    id: 'q3',
+    promptEN: 'Q3 · Arrange the steps into the correct recursive process.',
+    promptZH: 'Q3 · 将以下步骤按正确的递归流程排序。',
+    // promptZH: '将以下步骤按正确的递归流程排序。',
+    stepsEN: [
+      'Check if the list is empty',
+      'Recursively remove elements from head->next',
+      'Decide whether to return head or head->next based on head->val',
+    ],
+    stepsZH: ['判断链表是否为空', '对 head->next 进行递归删除', '根据 head->val 决定返回 head 或 head->next'],
+  };
+  
+  const FILL_Q: FillBlankQ = {
+    id: 'q5',
+    promptEN: 'Q5 · Fill in the blanks (C++):',
+    promptZH: 'Q5 · 填空（C++）：',
+    blanks: [
+      { id: 'b1', placeholder: 'base condition' },
+      { id: 'b2', placeholder: 'return value when head->val == val' },
+    ],
+    footerEN:
+      'if (__________) return head;\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? _____________ : head;',
+    footerZH:
+      'if (__________) return head;\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? _____________ : head;',
+  };
+  
+  // ==== Small UI blocks (no correctness/answers shown) ====
+  function MCQBlock({ q, zh }: { q: MCQ; zh: boolean }) {
+    const [choice, setChoice] = useState<string>('');
+    return (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography fontWeight={700} gutterBottom>
+          {zh ? q.promptZH : q.promptEN}
+        </Typography>
+        <RadioGroup value={choice} onChange={(e) => setChoice((e.target as HTMLInputElement).value)}>
+          <Stack gap={1}>
+            {q.options.map((op) => (
+              <FormControlLabel
+                key={op.key}
+                value={op.key}
+                control={<Radio />}
+                label={`${op.key}. ${zh ? op.textZH : op.textEN}`}
+              />
+            ))}
+          </Stack>
+        </RadioGroup>
+      </Paper>
+    );
+  }
+  
+  function OrderingBlock({ q, zh }: { q: OrderingQ; zh: boolean }) {
+    const [order, setOrder] = useState<number[]>(q.stepsEN.map((_, i) => i));
+    const steps = zh ? q.stepsZH : q.stepsEN;
+    const move = (i: number, dir: -1 | 1) => {
+      const j = i + dir;
+      if (j < 0 || j >= order.length) return;
+      const next = [...order];
+      [next[i], next[j]] = [next[j], next[i]];
+      setOrder(next);
+    };
+    return (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography fontWeight={700} gutterBottom>
+          {zh ? q.promptZH : q.promptEN}
+        </Typography>
+        <Stack gap={1}>
+          {order.map((idx, i) => (
+            <Stack key={`${idx}-${i}`} direction="row" alignItems="center" gap={1}>
+              <Typography variant="body2" sx={{ width: 24, textAlign: 'right', color: 'text.secondary' }}>
+                {i + 1}.
+              </Typography>
+              <Paper sx={{ p: 1, flex: 1 }} variant="outlined">
+                {steps[idx]}
+              </Paper>
+              <Stack direction="row" gap={1}>
+                <Button size="small" variant="outlined" onClick={() => move(i, -1)} disabled={i === 0}>
+                  ↑
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => move(i, 1)}
+                  disabled={i === order.length - 1}
+                >
+                  ↓
+                </Button>
+              </Stack>
+            </Stack>
+          ))}
+        </Stack>
+      </Paper>
+    );
+  }
+  
+  function FillBlankBlock({ q, zh }: { q: FillBlankQ; zh: boolean }) {
+    const [b1, setB1] = useState('');
+    const [b2, setB2] = useState('');
+    return (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography fontWeight={700} gutterBottom>
+          {zh ? q.promptZH : q.promptEN}
+        </Typography>
+        <Stack gap={1}>
+          <TextField size="small" label={zh ? '空 1' : 'Blank 1'} placeholder={q.blanks[0].placeholder} value={b1} onChange={(e) => setB1(e.target.value)} />
+          <TextField size="small" label={zh ? '空 2' : 'Blank 2'} placeholder={q.blanks[1].placeholder} value={b2} onChange={(e) => setB2(e.target.value)} />
+          <Paper variant="outlined" sx={{ p: 1, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13 }}>
+            {zh ? q.footerZH : q.footerEN}
+          </Paper>
+        </Stack>
+      </Paper>
+    );
+  }
+  
+  function ParsonsBlock({ lines, zh }: { lines: string[]; zh: boolean }) {
+    const [order, setOrder] = useState<number[]>(lines.map((_, i) => i));
+    const move = (i: number, dir: -1 | 1) => {
+      const j = i + dir;
+      if (j < 0 || j >= order.length) return;
+      const next = [...order];
+      [next[i], next[j]] = [next[j], next[i]];
+      setOrder(next);
+    };
+    return (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography fontWeight={700} gutterBottom>
+          {zh ? 'Q6 · Parsons 拼图（代码排序）' : 'Q6 · Parsons Problem (Code Ordering)'}
+        </Typography>
+        <Typography variant="body2" sx={{ mb: 1 }}>
+          {zh ? '将下列代码重排为正确的递归函数：' : 'Reorder the lines to form the correct recursive function:'}
+        </Typography>
+        <Stack gap={1}>
+          {order.map((idx, i) => (
+            <Stack key={`${idx}-${i}`} direction="row" alignItems="center" gap={1}>
+              <Typography variant="body2" sx={{ width: 24, textAlign: 'right', color: 'text.secondary' }}>
+                {i + 1}.
+              </Typography>
+              <Paper sx={{ p: 1, flex: 1, fontFamily: 'monospace', fontSize: 13 }} variant="outlined">
+                {lines[idx]}
+              </Paper>
+              <Stack direction="row" gap={1}>
+                <Button size="small" variant="outlined" onClick={() => move(i, -1)} disabled={i === 0}>
+                  ↑
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => move(i, 1)}
+                  disabled={i === order.length - 1}
+                >
+                  ↓
+                </Button>
+              </Stack>
+            </Stack>
+          ))}
+        </Stack>
+      </Paper>
+    );
+  }
+  
+  const PARSONS_LINES = [
+    'return (head->val == val) ? head->next : head;',
+    'head->next = removeElements(head->next, val);',
+    'if (head == nullptr) {',
+    'return head;',
+    '}',
+  ];
 // 自定义橡皮擦图标（简洁线框款）
 const EraserIcon = (props: any) => (
   <SvgIcon {...props} viewBox="0 0 24 24">
@@ -78,6 +307,8 @@ export default function Home() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0); // 当前 step 的 index
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
   const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
+    // 语言切换（EN/中文）
+const [zh, setZh] = useState(false);
   // 自定义插入模式（点击画布插入）
   const [pendingInsertTool, setPendingInsertTool] = useState<'rectangle' | 'ellipse' | null>(null);
   const rightPaneRef = useRef<HTMLDivElement | null>(null);
@@ -144,10 +375,6 @@ export default function Home() {
   const modeWindowRef = useRef<HTMLDivElement | null>(null);
   const [modeWindowSize, setModeWindowSize] = useState({ width: 220, height: 120 });
   const [isModeCardCollapsed, setIsModeCardCollapsed] = useState(true);
-  const [zh, setZh] = useState(true);
-
-  // 左侧描述面板折叠状态
-  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
 
   // 为每个模式维护独立的画布状态
   const [exploreModeCanvas, setExploreModeCanvas] = useState<StepScene>({
@@ -168,280 +395,76 @@ export default function Home() {
   
   // 添加模式切换状态，防止在切换过程中保存
   const isModeSwitching = useRef(false);
-  // 故事模式算法选择：algo1（默认）或 iter（迭代版）
-  const [storyAlgorithm, setStoryAlgorithm] = useState<'algo1' | 'iter'>('algo1');
+  // 故事模式算法选择：greed（贪心算法）
+  const [storyAlgorithm, setStoryAlgorithm] = useState<'greed'>('greed');
   
-  // const titles_iter = [
-  //   // '初始化指针',
-  //   '第一次比较并接入',
-  //   '移动 prev，更新指针，再次比较，继续接入',
-  //   '循环推进：直到有一条用完',
-  //   '连接剩余部分，🎉 全部完成！',
-  // ];
-  // const hints_iter = [
-  //   "创建一个虚拟头结点 prehead（值可写 -1，仅作占位），让 prev 指向它；\n设置 l1 指向 list1 头、l2 指向 list2 头。\n现在：l1=1，l2=1。\n比较 l1 与 l2（节点相等时选择list1的节点）, 应该接入哪个到prehead节点之后?\n 用橘色箭头从prehead节点指向你选择的节点。",
-  //   "把 prev 向前移动到刚接入的1，并将 l1 指向下一个（此时 l1=2）。再次比较：l1=2，l2=1。\n这次应像prev节点接入哪个节点，用橘色箭头标出",
-  //   "继续循环接入节点，在每次接入后，prev 与对应指针同步前移。\n一直到l1=null或者l2=null停下",
-  //   "当某一条链表指针变为 null，\n将另一条未用完的链表整体接到 prev 所指向节点的后面。完成！返回 prehead.next。\n点击检查是否得到有序链，且所有原节点都被包含。",
-  // ];
-  
+  const titles_greed = [
+    '贪心选择',
+    '局部最优',
+    '继续贪心',
+    '完成合并',
+  ];
+  const hints_greed = [
+    "贪心算法：每次选择当前最小的节点。\n比较 list1 和 list2 的头节点，选择较小的一个。\n用绿色圆圈🟢标记出你选择的节点。",
+    "继续贪心策略：在剩余的节点中选择最小的。\n标记已选择的节点，继续比较下一个。",
+    "重复贪心选择：每次都在当前可用的节点中选择最小的。\n保持贪心的局部最优性质。",
+    "完成！检查是否得到了有序的合并链表。\n贪心算法保证了每一步都是局部最优的选择。",
+  ];
+
   // const steps = useMemo(() => {
-  //   if (storyAlgorithm === 'iter') {
-  //     return hints_iter.map((h) => ({ stepText: h }));
-  //   }
-  //   return [
-  //     { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
-  //     { stepText: "将合并链表 merged 的第一个节点画为刚刚选择的节点，随后从 list2 中移除（用 ❌ 表示已移除）。" },
-  //     // { stepText: "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？\n用绿色圆圈🟢标记出你选择的节点。" },
-  //     // { stepText: "将 list1 中的 1 添加到合并后的链表中。\n更新 list1，用红色打叉❌标记移除这个节点，然后继续。" },
-  //     { stepText: "连续做3次，自己试着完成！现在链表list1: 1->2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接3个节点"},
-  //         { stepText: "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。" },
-  //     { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
-  //   ] as { stepText: string }[];
-  // }, [storyAlgorithm]);
-// ✅ 新增：迭代版中英文标题/提示
-const titles_iter_ZH = [
-  '第一次比较并接入',
-  '移动 prev，更新指针，再次比较，继续接入',
-  '循环推进：直到有一条用完',
-  '连接剩余部分，🎉 全部完成！',
-];
-const titles_iter_EN = [
-  'First compare & attach',
-  'Move prev, update pointers, compare again',
-  'Keep looping until one list ends',
-  'Attach the remainder — done! 🎉',
-];
-
-const hints_iter_ZH = [
-  "创建一个虚拟头结点 prehead（值可写 -1，仅作占位），让 prev 指向它；\n设置 l1 指向 list1 头、l2 指向 list2 头。\n现在：l1=1，l2=1。\n比较 l1 与 l2（节点相等时选择 list1 的节点），应该接入哪个到 prehead 节点之后？\n用橘色箭头从 prehead 节点指向你选择的节点。",
-  "把 prev 向前移动到刚接入的 1，并将 l1 指向下一个（此时 l1=2）。再次比较：l1=2，l2=1。\n这次应向 prev 节点接入哪个节点，用橘色箭头标出。",
-  "继续循环接入节点，在每次接入后，prev 与对应指针同步前移。\n一直到 l1=null 或者 l2=null 停下。",
-  "当某一条链表指针变为 null，\n将另一条未用完的链表整体接到 prev 所指向节点的后面。完成！返回 prehead.next。\n点击检查是否得到有序链，且所有原节点都被包含。",
-];
-const hints_iter_EN = [
-  "Create a dummy head `prehead` (e.g., value -1 as a placeholder) and set `prev` to it.\nLet `l1` point to list1 head and `l2` to list2 head.\nNow: l1=1, l2=1.\nCompare l1 and l2 (when equal, choose the node from list1). Which one should be attached after `prehead`?\nUse an orange arrow from `prehead` to the chosen node.",
-  "Move `prev` to the just-attached 1, and advance `l1` (now l1=2). Compare again: l1=2, l2=1.\nWhich node should be attached to `prev` this time? Mark with an orange arrow.",
-  "Keep attaching the smaller node each time; after attaching, move `prev` and the corresponding pointer forward.\nStop when either `l1` or `l2` becomes null.",
-  "When one list becomes null,\nattach the remaining list to `prev.next`. Done! Return `prehead.next`.\nClick Check to verify the result is sorted and includes all original nodes.",
-];
-const titles_iter = zh ? titles_iter_ZH : titles_iter_EN;
-const hints_iter = zh ? hints_iter_ZH : hints_iter_EN;
-// ✅ 如果你还有贪心/其它算法，也可同样做一份 EN 版，然后像下面这样切换
-// 例如：const hints_greed_ZH = [...]; const hints_greed_EN = [...];
-
-// ✅ 替换你原来的 steps 这段 useMemo（支持 iter & 其它算法 + 中英切换）
-const steps = useMemo(() => {
-  if (storyAlgorithm === 'iter') {
-    const iterHints = zh ? hints_iter_ZH : hints_iter_EN;
-    return iterHints.map((h) => ({ stepText: h }));
-  }
-
-  // 非 iter（你原来默认的“贪心/自定义故事模式步骤”）——做双语
-  if (zh) {
-    return [
-      { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
-      { stepText: "将合并链表 merged 的第一个节点画为刚刚选择的节点，随后从 list2 中移除（用 ❌ 表示已移除）。" },
-      { stepText: "连续做3次，自己试着完成！现在链表 list1: 1->2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接 3 个节点" },
-      { stepText: "继续！合并下一个节点。\n在 4 和 4 之间选择后，画出更新后的链表。" },
-      { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
-    ];
-  } else {
-    return [
-      { stepText: "Let's start! We have two lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nLook at the heads (both are 1).\nWhich one should we add first?\nMark your choice with a green circle 🟢." },
-      { stepText: "Draw the first node of the merged list as the one you just chose, then remove it from the original list (mark with ❌)." },
-      { stepText: "Do it three more times by yourself! Now lists are: list1: 1->2->4, list2: 3->4\nRule: 🟢 pick the smaller node → attach to merged list → ❌ delete from the original list\nFinish attaching 3 new nodes." },
-      { stepText: "Keep going! Merge the next node.\nBetween 4 and 4, choose one and draw the updated lists." },
-      { stepText: "Great! Connect the final node to finish the merged list.\nDouble-check that all nodes are included and the order is correct." },
-    ];
-  }
-}, [storyAlgorithm, zh]);
-// 1. 文案字典
-const ZH = {
-  toolbar_mode: "模式",
-  toolbar_move: "移动",
-  toolbar_select: "选择",
-  toolbar_rect: "矩形",
-  toolbar_ellipse: "椭圆",
-  toolbar_arrow: "箭头",
-  toolbar_line: "连线",
-  toolbar_draw: "自由绘制",
-  toolbar_text: "文字",
-  toolbar_eraser: "橡皮擦",
-  toolbar_library: "素材库",
-
-  greedy_title: "贪心算法",
-  btn_animation: "动画",
-  // 你用到的其它 key 也都放进来…
-};
-
-const EN = {
-  toolbar_mode: "Mode",
-  toolbar_move: "Pan",
-  toolbar_select: "Select",
-  toolbar_rect: "Rectangle",
-  toolbar_ellipse: "Ellipse",
-  toolbar_arrow: "Arrow",
-  toolbar_line: "Line",
-  toolbar_draw: "Free draw",
-  toolbar_text: "Text",
-  toolbar_eraser: "Eraser",
-  toolbar_library: "Library",
-
-  greedy_title: "Greedy Algorithm",
-  btn_animation: "Animation",
-  // 同步英文字段…
-};
-
-// 2. 根据 zh 选择一份
-const t = useMemo(() => (zh ? ZH : EN), [zh]);
-
-
+  //   return hints_greed.map((h) => ({ stepText: h }));
+  // }, []);
+// ... existing code ...
+const steps = hints_greed.map((h) => ({ stepText: h }));
+// ... existing code ...
   // 根据算法重置故事模式的所有步骤与画布；第0步采用不同初始文件
-  // const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter') => {
-  //   if (!excalidrawAPI) return;
-  //   try {
-  //     const initFile = alg === 'iter'
-  //     ? (zh ? '/initial2.excalidraw' : '/initial2e.excalidraw')
-  //     : (zh ? '/initial1.excalidraw' : '/initial1e.excalidraw');
-  //     let initialStep0: StepScene = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
-  //     try {
-  //       const resp = await fetch(initFile);
-  //       if (resp.ok) {
-  //         const data = await resp.json();
-  //         initialStep0 = {
-  //           elements: Array.isArray(data?.elements) ? data.elements : [],
-  //           files: data?.files || {},
-  //           appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
-  //         };
-  //       }
-  //     } catch {}
-
-  //     const initialScenes: Record<number, StepScene> = {};
-  //     initialScenes[0] = initialStep0;
-  //     for (let i = 1; i < (alg === 'iter' ? hints_iter.length : steps.length); i++) {
-  //       initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
-  //     }
-  //     setScenes(initialScenes);
-
-  //     // 重置步骤索引/状态/提示
-  //     currentStepIndexRef.current = 0;
-  //     setCurrentStepIndex(0);
-  //     // 同步当前步骤文本为所选算法的第0步
-  //     if (alg === 'iter') {
-  //       setCurrentStepText(hints_iter[0] || '');
-  //     } else {
-  //       setCurrentStepText(
-  //         "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。我们应该先添加哪一个？\n取出它绘制到合并后的链表merged中。\n然后从 list2 中将这个节点用橡皮擦擦除。"
-  //       );
-  //     }
-  //     setStepStatuses(Array(Object.keys(initialScenes).length).fill('pending'));
-  //     setStepNotes({});
-  //     setStepChecks({});
-  //     setNotes('');
-  //     setIsNotesOpen(false);
-
-  //     // 显示第0步
-  //     const scene0 = initialScenes[0];
-  //     excalidrawAPI.updateScene({
-  //       elements: Array.from(scene0.elements) as any[],
-  //       appState: scene0.appState,
-  //       captureUpdate: 2 as any,
-  //     });
-  //   } catch (e) {
-  //     console.warn('重置故事模式失败', e);
-  //   }
-  // };
-  // 把 zh 作为参数（或直接用外层 state 也行）
-const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter', zh: boolean) => {
-  if (!excalidrawAPI) return;
-  try {
-    // 根据语言 & 算法，选择初始文件
-    const initFile =
-      alg === 'iter'
-        ? (zh ? '/initial2.excalidraw' : '/initial2e.excalidraw')
-        : (zh ? '/initial1.excalidraw' : '/initial1e.excalidraw');
-
-    // 切换期间先暂停自动保存，避免被旧场景覆盖
-    isModeSwitching.current = true;
-
-    let initialStep0: StepScene = {
-      elements: [],
-      files: {},
-      appState: { viewBackgroundColor: '#fff' },
-    };
-
+  const resetStoryForAlgorithm = async (alg: 'greed') => {
+    if (!excalidrawAPI) return;
     try {
-      const resp = await fetch(initFile);
-      if (resp.ok) {
-        const data = await resp.json();
-        initialStep0 = {
-          elements: Array.isArray(data?.elements) ? data.elements : [],
-          files: data?.files || {},
-          appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
-        };
-      } else {
-        console.warn('fetch init file failed:', initFile, resp.status);
+      const initFile = '/initial1.excalidraw'; // 使用默认初始文件
+      let initialStep0: StepScene = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+      try {
+        const resp = await fetch(initFile);
+        if (resp.ok) {
+          const data = await resp.json();
+          initialStep0 = {
+            elements: Array.isArray(data?.elements) ? data.elements : [],
+            files: data?.files || {},
+            appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
+          };
+        }
+      } catch {}
+
+      const initialScenes: Record<number, StepScene> = {};
+      initialScenes[0] = initialStep0;
+      for (let i = 1; i < hints_greed.length; i++) {
+        initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
       }
+      setScenes(initialScenes);
+
+      // 重置步骤索引/状态/提示
+      currentStepIndexRef.current = 0;
+      setCurrentStepIndex(0);
+      // 同步当前步骤文本为所选算法的第0步
+      setCurrentStepText(hints_greed[0] || '');
+      setStepStatuses(Array(Object.keys(initialScenes).length).fill('pending'));
+      setStepNotes({});
+      setStepChecks({});
+      setNotes('');
+      setIsNotesOpen(false);
+
+      // 显示第0步
+      const scene0 = initialScenes[0];
+      excalidrawAPI.updateScene({
+        elements: Array.from(scene0.elements) as any[],
+        appState: scene0.appState,
+        captureUpdate: 2 as any,
+      });
     } catch (e) {
-      console.warn(`Failed to fetch init file: ${initFile}`, e);
+      console.warn('重置故事模式失败', e);
     }
+  };
 
-    // 重置步骤场景（第0步用初始文件，其它步清空）
-    const stepsCount = steps.length; // 你已有的 steps
-    const initialScenes: Record<number, StepScene> = {};
-    initialScenes[0] = initialStep0;
-    for (let i = 1; i < stepsCount; i++) {
-      initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
-    }
-    setScenes(initialScenes);
-
-    // 回到第0步并显示
-    currentStepIndexRef.current = 0;
-    setCurrentStepIndex(0);
-    setCurrentStepText(steps[0]?.stepText || '');
-    setStepStatuses(Array(stepsCount).fill('pending'));
-    setStepNotes({});
-    setStepChecks({});
-    setNotes('');
-    setIsNotesOpen(false);
-
-    // 立即刷新到画布
-    excalidrawAPI.updateScene({
-      elements: Array.from(initialStep0.elements) as any[],
-      appState: initialStep0.appState,
-      captureUpdate: 2 as any,
-      collaborators: new Map(),
-    });
-  } finally {
-    // 切换完再恢复自动保存
-    isModeSwitching.current = false;
-  }
-};
-// 当语言 zh 变化时，若当前在 story 模式，就重置当前算法的初始画布
-useEffect(() => {
-  if (!excalidrawAPI) return;
-  if (mode !== 'story') return;          // 只在故事模式刷新初始画布
-  resetStoryForAlgorithm(storyAlgorithm, zh);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [zh]);
-
-  // const steps = useMemo(
-  // () => [
-  //   { stepText: "让我们开始吧！请绘制一个节点表示 \( F(5) \)。" },
-  //   { stepText: "现在你已经绘制了 \( F(5) \)，接下来应该考虑什么？\( F(5) \) 依赖于哪两个子问题？" },
-  //   { stepText: "你已经找到了 \( F(5) \) 的两个子问题，接下来应该怎么做？\( F(4) \) 的子问题是什么？" },
-  //   { stepText: "你已经分解了 \( F(4) \)，接下来呢？\( F(3) \) 的子问题是什么？" },
-  //   { stepText: "你已经分解了 \( F(3) \)，接下来呢？\( F(2) \) 的子问题是什么？" },
-  //   { stepText: "你已经分解了 \( F(2) \)，接下来呢？\( F(3) \) 的子问题是什么？" },
-  //   { stepText: "你已经分解了 \( F(3) \)，接下来呢？\( F(2) \) 的子问题是什么？" },
-  //   { stepText: "你已经分解了所有子问题，现在应该考虑什么？哪些节点是基本情况？" },
-  //   { stepText: "你已经标记了基本情况，接下来应该怎么做？如何从基本情况开始回溯？" },
-  //   { stepText: "你已经开始回溯了，接下来呢？如何逐步计算每个节点的值？" },
-  //   { stepText: "你已经完成了递归树的构建和计算，现在应该做什么？检查你的递归树，确保所有节点的值都已正确计算。" }
-  //       ] as { stepText: string }[],
-  //     []
-  // );
   const [stepStatuses, setStepStatuses] = useState<string[]>(Array(steps.length).fill("pending"));
 
   // 用 index->scene 的 map 存每步画布
@@ -469,70 +492,7 @@ useEffect(() => {
       });
   }, [excalidrawAPI]);
 
-  // 初始 step：仅第1步从 public/initial1.excalidraw 初始化，其余空白
-  useEffect(() => {
-    if (!excalidrawAPI) return;
-    console.log('🚀 初始化画布和场景（第1步载入 initial1.excalidraw，其余空白）');
-    (async () => {
-      let initialStep0: StepScene | null = null;
-      try {
-        const resp = await fetch('/initial1.excalidraw');
-        if (resp.ok) {
-          const data = await resp.json();
-          const elements = Array.isArray(data?.elements) ? data.elements : [];
-          const files = data?.files || {};
-          const appState = { viewBackgroundColor: '#fff', ...(data?.appState || {}) };
-          initialStep0 = { elements, files, appState };
-          console.log('✅ 载入 initial1.excalidraw 成功，元素数:', elements.length);
-        } else {
-          console.warn('⚠️ 载入 initial1.excalidraw 失败:', resp.status);
-        }
-      } catch (e) {
-        console.warn('⚠️ 载入 initial1.excalidraw 异常:', e);
-      }
-
-    const initialScenes: Record<number, StepScene> = {};
-      // 第一步：若有文件则载入，否则空白
-      if (initialStep0) {
-        initialScenes[0] = initialStep0;
-        console.log('✅ 步骤 0 使用 initial1.excalidraw 初始化');
-      } else {
-        initialScenes[0] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
-        console.log('✅ 步骤 0 初始化为空白画布（未找到 initial1.excalidraw）');
-      }
-      // 其余步骤空白
-    for (let i = 1; i < steps.length; i++) {
-        initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
-        console.log(`✅ 步骤 ${i} 初始化为空白画布`);
-      }
-
-    setScenes(initialScenes);
-      console.log(`✅ 初始化了 ${steps.length} 个步骤，步骤0载入${initialStep0 ? '文件' : '空白'}，其余空白`);
-    
-      // 显示第0步
-      const scene0 = initialScenes[0];
-      excalidrawAPI.updateScene({
-        elements: Array.from(scene0.elements) as any[],
-        appState: scene0.appState,
-      captureUpdate: 2 as any,
-    });
-      console.log('✅ 显示第0步画布');
-    
-    // 确保探索模式有独立的初始状态
-    if (exploreModeCanvas.elements.length === 0) {
-        setExploreModeCanvas({ elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } });
-      console.log('✅ 初始化探索模式画布完成');
-    }
-    
-    currentStepIndexRef.current = 0;
-    console.log('📍 设置当前步骤索引为 0');
-    if (steps.length > 0) {
-      setCurrentStepText(steps[0].stepText);
-      console.log('📝 设置初始步骤文本:', steps[0].stepText.substring(0, 50) + '...');
-    }
-    })();
-  }, [excalidrawAPI]); // eslint-disable-line
-
+ 
   // 自动保存场景的定时器
   useEffect(() => {
     if (!excalidrawAPI) return;
@@ -1107,10 +1067,10 @@ useEffect(() => {
     
         // 2) 载入目标场景：若为空 → 继承上一页
     let targetScene: StepScene = updatedScenes[nextIndex] || {
-          elements: [],
-          files: {},
-          appState: { viewBackgroundColor: "#fff" },
-        };
+      elements: [],
+      files: {},
+      appState: { viewBackgroundColor: "#fff" },
+    };
 
     const isEmpty = !targetScene.elements || targetScene.elements.length === 0;
 
@@ -1207,8 +1167,6 @@ useEffect(() => {
 
   // 示例按钮：Check = 验证当前 step
   const onCheck = async (stepIndex?: number) => {
-    console.log('🚀 onCheck 函数被调用:', { stepIndex, currentStepIndex, mode });
-    
     // 使用传入的步骤索引，如果没有传入则使用当前的
     const targetStepIndex = stepIndex !== undefined ? stepIndex : currentStepIndex;
     // 场景已经自动保存，这里只需要验证
@@ -1361,9 +1319,7 @@ useEffect(() => {
     const idx = targetStepIndex;
     const hasPreviousStep = idx > 0;
     const previousStepText = hasPreviousStep
-      ? (storyAlgorithm === 'iter'
-          ? (hints_iter[idx - 1] || '')
-          : (steps[idx - 1]?.stepText || ''))
+      ? (steps[idx - 1]?.stepText || '')
       : '';
 
     // 调试信息
@@ -1372,16 +1328,13 @@ useEffect(() => {
       targetStepIndex: idx,
       storyAlgorithm,
       hasPreviousStep,
-      hints_iter_length: hints_iter.length,
       steps_length: steps.length,
       previousStepIndex: idx - 1,
-      hints_iter_previous: hints_iter[idx - 1],
       steps_previous: steps[idx - 1]?.stepText,
       previousStepText,
       // 添加更多调试信息
       currentStepText_preview: currentStepText?.substring(0, 50),
-      steps_array: steps.map((s, i) => ({ index: i, text: s.stepText?.substring(0, 30) })),
-      hints_iter_array: hints_iter.map((h, i) => ({ index: i, text: h?.substring(0, 30) }))
+      steps_array: steps.map((s, i) => ({ index: i, text: s.stepText?.substring(0, 30) }))
     });
 
     // console.log('Image base64:', base64); // 打印保存的图片路径
@@ -1536,205 +1489,6 @@ useEffect(() => {
   }
   
 };
-// const selectedText = `
-//   # 斐波那契数列
-
-//   ## 问题描述
-
-//   斐波那契数列是一个经典的数列，其中每个数字是前两个数字的和。给定一个整数 \( n \)，计算斐波那契数列的第 \( n \) 项 \( F(n) \)。
-
-//   斐波那契数列的定义如下：
-//   \[ F(0) = 0, F(1) = 1 \]
-//   \[ F(n) = F(n - 1) + F(n - 2), \text{对于 } n > 1 \]
-
-//   例如：
-//   \`\`\`
-//   输入：n = 5
-//   输出：5
-//   \`\`\`
-
-//   ---
-
-//   <details>
-//   <summary>✅ 方法 1：递归</summary>
-
-//   ### 直觉
-
-//   使用递归方法可以直观地实现斐波那契数列的计算。递归的核心思想是将问题分解为更小的子问题，直到达到基本情况。对于斐波那契数列，递归公式为：
-//   \[ F(n) = F(n - 1) + F(n - 2) \]
-//   基本情况为：
-//   \[ F(0) = 0 \]
-//   \[ F(1) = 1 \]
-
-//   ### 算法
-
-//   1. 如果 \( n \) 为 0 或 1，直接返回 \( n \)。
-//   2. 否则，递归调用 \( F(n - 1) \) 和 \( F(n - 2) \)，并将结果相加。
-//   3. 返回最终结果。
-
-//   递归算法的实现如下：
-//   \`\`\`python
-//   def fibonacci(n):
-//       if n == 0:
-//           return 0
-//       elif n == 1:
-//           return 1
-//       else:
-//           return fibonacci(n - 1) + fibonacci(n - 2)
-//   \`\`\`
-
-//   </details>
-
-//   ---
-
-//   <details>
-//   <summary>✅ 方法 2：动态规划</summary>
-
-//   ### 直觉
-
-//   动态规划方法可以避免递归中的重复计算，从而提高效率。通过从底向上计算斐波那契数列的每一项，我们可以存储中间结果，避免重复计算。
-
-//   ### 算法
-
-//   1. 初始化一个数组 \`dp\`，其中 \`dp[i]\` 表示第 \( i \) 项的值。
-//   2. 设置基本情况：\`dp[0] = 0\` 和 \`dp[1] = 1\`。
-//   3. 从 2 到 \( n \) 遍历，计算每一项的值：\`dp[i] = dp[i - 1] + dp[i - 2]\`。
-//   4. 返回 \`dp[n]\`。
-
-//   动态规划算法的实现如下：
-//   \`\`\`python
-//   def fibonacci(n):
-//       if n == 0:
-//           return 0
-//       elif n == 1:
-//           return 1
-//       dp = [0] * (n + 1)
-//       dp[0] = 0
-//       dp[1] = 1
-//       for i in range(2, n + 1):
-//           dp[i] = dp[i - 1] + dp[i - 2]
-//       return dp[n]
-//   \`\`\`
-
-//   </details>
-// `;
-
-// console.log(selectedText);
-  const selectedText = `  # 合并两个有序链表
-
-  ## 问题描述
-
-  给定两个有序链表的头节点 \`list1\` 和 \`list2\`。
-
-  将这两个链表合并为一个**有序**链表。合并后的链表应通过将两个链表的节点**拼接**在一起形成。返回合并后的链表的头节点。
-
-
-  \`\`\`
-  输入：list1 = [1,2,4], list2 = [1,3,4]
-  \`\`\`
-
-  ---
-
-  <details>
-  <summary>✅ 方法 1：递归</summary>
-
-  ### 直觉
-
-  我们可以递归地定义两个链表的合并操作结果如下（避免处理空链表的特殊情况）：
-
-
-  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
-  list2[0] + merge(list1, list2[1:])  否则
-
-
-  即较小的链表头节点加上对剩余元素的合并结果。
-
-  ### 算法
-
-  我们直接模拟上述递归过程，首先处理边界情况。具体来说，如果 l1 或 l2 中的任意一个最初为 null，则无需合并，直接返回非空链表即可。否则，我们确定 l1 和 l2 中哪个头节点较小，并递归地将其 next 值设置为下一次合并的结果。鉴于两个链表均以 null 结尾，递归最终会终止。
-
-  </details>
-
-  ---
-
-  <details>
-  <summary>✅ 方法 2：迭代</summary>
-
-  ### 直觉
-
-  我们可以通过迭代实现相同的思想，假设 l1 完全小于 l2，并逐个处理元素，将 l2 的元素插入到 l1 的必要位置。
-
-  ### 算法
-
-  首先，我们设置一个虚假的"prehead"节点，以便稍后轻松返回合并链表的头节点。我们还维护一个 prev 指针，指向当前正在考虑调整其 next 指针的节点。然后，我们执行以下操作，直到 l1 和 l2 中至少有一个指向 null：如果 l1 的值小于或等于 l2 的值，则将 l1 连接到前一个节点并递增 l1。否则，我们对 l2 执行相同的操作。然后，无论我们连接了哪个链表，我们都递增 prev，使其始终落后于其中一个链表头一步。
-
-  循环终止后，l1 和 l2 中最多有一个非空。因此（因为输入链表是按排序顺序排列的），如果任意一个链表非空，则它只包含大于所有已合并元素的元素。这意味着我们可以简单地将非空链表连接到合并链表并返回。
-
-  要查看此操作的示例，请查看下面的动画：
-
-  <!-- animation-slot -->
-  </details>
-  `
-  const selectedTextEN = `
-  # 🧠 Merge Two Sorted Lists
-
-  ## 📋 Problem Description
-
-  You are given the heads of two sorted linked lists \`list1\` and \`list2\`.
-
-  Merge the two lists into one **sorted** list. The list should be made by **splicing together** the nodes of the first two lists. Return the head of the merged linked list.
-
-  ---
-
-  ### Example
-
-  \`\`\`
-  Input: list1 = [1,2,4], list2 = [1,3,4]
-  \`\`\`
-
-
-  ---
-
-  <details>
-  <summary>✅ Approach 1: Recursion</summary>
-
-  ### Intuition
-
-  We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
-
-
-  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
-  list2[0] + merge(list1, list2[1:])  otherwise
-
-
-  Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
-
-  ### Algorithm
-
-  We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.
-
-  </details>
-
-  ---
-
-  <details>
-  <summary>✅ Approach 2: Iteration</summary>
-
-  ### Intuition
-
-  We can achieve the same idea via iteration by assuming that l1 is entirely less than l2 and processing the elements one-by-one, inserting elements of l2 in the necessary places in l1.
-
-  ### Algorithm
-
-  First, we set up a false "prehead" node that allows us to easily return the head of the merged list later. We also maintain a prev pointer, which points to the current node for which we are considering adjusting its next pointer. Then, we do the following until at least one of l1 and l2 points to null: if the value at l1 is less than or equal to the value at l2, then we connect l1 to the previous node and increment l1. Otherwise, we do the same, but for l2. Then, regardless of which list we connected, we increment prev to keep it one step behind one of our list heads.
-
-  After the loop terminates, at most one of l1 and l2 is non-null. Therefore (because the input lists were in sorted order), if either list is non-null, it contains only elements greater than all of the previously-merged elements. This means that we can simply connect the non-null list to the merged list and return it.
-
-  To see this in action on an example, check out the animation below:
-
-  <!-- animation-slot -->
-  </details>
-  `;
   const handleNotesClose = () => {
       setIsNotesOpen(false);
     };
@@ -1925,42 +1679,7 @@ useEffect(() => {
       console.log('mapped(scene est.) sample<=10', mapped);
     } catch {}
     console.groupEnd();
-    // const data = {
-    //   "elements": [
-    //     {
-    //       "type": "text",
-    //       "text": "Merged",
-    //       "x_norm": 0.0284,
-    //       "y_norm": 0.7234,
-    //       "style": {
-    //         "strokeColor": "#ff0000"
-    //       }
-    //     },
-    //     {
-    //       "type": "arrow",
-    //       "x_norm": 0.17,
-    //       "y_norm": 0.7234,
-    //       "end_x_norm": 0.1875,
-    //       "end_y_norm": 0.7234,
-    //       "style": {
-    //         "strokeColor": "#ff0000",
-    //         "endArrowhead": "arrow"
-    //       }
-    //     },
-    //     {
-    //       "type": "rectangle",
-    //       "x_norm": 0.4261,
-    //       "y_norm": 0.8596,
-    //       "w_norm": 0.1591,
-    //       "h_norm": 0.0085,
-    //       "style": {
-    //         "strokeColor": "#ff0000",
-    //         "fillColor": "#ff0000"
-    //       }
-    //     }
-    //   ],
-    //   "notes": "Compared heads (1 from list1, 1 from list2). As per instruction, took 1 from list2. 'Merged' pointer now points to list2's node '1'. List2's head pointer (underline) advances to node '3'."
-    // }
+
     let parsed;
     try {
       console.log('payload:', data.payload);
@@ -1969,20 +1688,6 @@ useEffect(() => {
     //   height: frameH,
     // },{x: frameX0, 
     //   y: frameY0,});
-        // 调试坐标系统
-        console.log('🔍 AI绘制坐标调试:', {
-          frameW, frameH, frameX0, frameY0,
-          payloadElements: data.payload?.elements?.length || 0,
-          firstElement: data.payload?.elements?.[0]
-        });
-        
-        // 验证坐标参数
-        if (!Number.isFinite(frameW) || !Number.isFinite(frameH) || 
-            !Number.isFinite(frameX0) || !Number.isFinite(frameY0)) {
-          console.error('❌ 坐标参数无效:', { frameW, frameH, frameX0, frameY0 });
-          throw new Error('坐标参数无效，无法绘制AI元素');
-        }
-        
         // 直接写入画布元素（嵌入到 Excalidraw 场景）
         await applyGeminiElementsToExcalidraw(
           excalidrawAPI,
@@ -2089,27 +1794,6 @@ useEffect(() => {
       const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
       const newEls = convertToExcalidrawElements(skeletons as any);
       excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
-            // 自动选中新创建的元素并打开属性面板
-      // ... existing code ...
-      // 自动选中新创建的元素并打开属性面板
-      if (newEls.length > 0) {
-        const newElementIds = newEls.reduce((acc: any, el: any) => {
-          acc[el.id] = true;
-          return acc;
-        }, {});
-        excalidrawAPI.updateScene({
-          appState: {
-            ...excalidrawAPI.getAppState(),
-            selectedElementIds: newElementIds,
-            // 打开属性面板
-            openMenu: 'shape',
-            // 确保选择工具激活
-            activeTool: { type: 'selection', lastActiveTool: null, locked: false, customType: null },
-          }
-        });
-      }
-// ... existing code ...
-      
       saveCurrentScene();
     } catch (e) {
       console.error('插入固定矩形失败', e);
@@ -2138,23 +1822,6 @@ useEffect(() => {
       const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
       const newEls = convertToExcalidrawElements(skeletons as any);
       excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
-      // 自动选中新创建的元素并打开属性面板
-      if (newEls.length > 0) {
-        const newElementIds = newEls.reduce((acc: any, el: any) => {
-          acc[el.id] = true;
-          return acc;
-        }, {});
-        excalidrawAPI.updateScene({
-          appState: {
-            ...excalidrawAPI.getAppState(),
-            selectedElementIds: newElementIds,
-            // 打开属性面板
-            openMenu: 'shape',
-            // 确保选择工具激活
-            activeTool: { type: 'selection', lastActiveTool: null, locked: false, customType: null },
-          }
-        });
-      }
       saveCurrentScene();
     } catch (e) {
       console.error('插入固定椭圆失败', e);
@@ -2302,14 +1969,18 @@ useEffect(() => {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {/* 演示按钮 */}
             <Button
-              variant="contained"
+              variant="outlined"
               fullWidth
+              onClick={() => window.location.href = '/'}
               sx={{
                 py: 1,
                 fontSize: '0.875rem',
                 fontWeight: 'bold',
                 opacity: isNavCollapsed ? 0 : 1,
                 transition: 'opacity 0.3s ease',
+                '&:hover': {
+                  bgcolor: 'action.hover',
+                },
               }}
             >
               演示
@@ -2356,6 +2027,9 @@ useEffect(() => {
                     textTransform: 'none',
                     opacity: isNavCollapsed ? 0 : 1,
                     transition: 'opacity 0.3s ease',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
                   }}
                 >
                   动画
@@ -2373,13 +2047,16 @@ useEffect(() => {
                     textTransform: 'none',
                     opacity: isNavCollapsed ? 0 : 1,
                     transition: 'opacity 0.3s ease',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
                   }}
                 >
                   画图
                 </Button>
                 <Button
                   size="small"
-                  variant="outlined"
+                  variant="contained"
                   fullWidth
                   onClick={() => window.location.href = '/recursive/testing'}
                   sx={{
@@ -2390,6 +2067,11 @@ useEffect(() => {
                     textTransform: 'none',
                     opacity: isNavCollapsed ? 0 : 1,
                     transition: 'opacity 0.3s ease',
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    '&:hover': {
+                      bgcolor: 'primary.dark',
+                    },
                   }}
                 >
                   测试
@@ -2428,6 +2110,9 @@ useEffect(() => {
                     textTransform: 'none',
                     opacity: isNavCollapsed ? 0 : 1,
                     transition: 'opacity 0.3s ease',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
                   }}
                 >
                   动画
@@ -2445,6 +2130,9 @@ useEffect(() => {
                     textTransform: 'none',
                     opacity: isNavCollapsed ? 0 : 1,
                     transition: 'opacity 0.3s ease',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
                   }}
                 >
                   画图 
@@ -2469,8 +2157,7 @@ useEffect(() => {
               </Box>
             </Box>
 
-  {/* 组2 */}
-  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography
                 variant="body2"
                 sx={{
@@ -2540,281 +2227,92 @@ useEffect(() => {
                 </Button>
               </Box>
             </Box>
-            {/* 组3 */}
-            {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  textAlign: 'center',
-                  py: 1,
-                  px: 1,
-                  fontSize: '0.875rem',
-                  fontWeight: 'normal',
-                  opacity: isNavCollapsed ? 0 : 1,
-                  transition: 'opacity 0.3s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                组3
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  C1D2
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  C2D1
-                </Button>
-              </Box>
-            </Box> */}
-
-            {/* 组4 */}
-            {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  textAlign: 'center',
-                  py: 1,
-                  px: 1,
-                  fontSize: '0.875rem',
-                  fontWeight: 'normal',
-                  opacity: isNavCollapsed ? 0 : 1,
-                  transition: 'opacity 0.3s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                组4
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  C2D1
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  C1D2
-                </Button>
-              </Box>
-            </Box> */}
+            
           </Box>
         </Box>
       </Box>
 
       {/* 内容区域 */}
       <div className="flex-1 flex">
-        {/* 左侧内容 - 可折叠 */}
-        <div 
-          className={`relative bg-gray-100 transition-all duration-300 ease-in-out ${
-            isLeftPanelCollapsed ? 'w-0 overflow-hidden' : 'w-2/5'
-          }`}
-          style={{
-            width: isLeftPanelCollapsed ? '0px' : undefined,
-            minWidth: isLeftPanelCollapsed ? '0px' : undefined,
-            maxWidth: isLeftPanelCollapsed ? '0px' : undefined,
-          }}
-        >
-          <MarkdownWithDrawing
-            markdown={zh?selectedText:selectedTextEN}
-            zh={zh}
-            onToggleZh={() => setZh(v => !v)}
-            // setZh={setZh}
-            onAlgorithmSelect={async (alg) => {
-              setStoryAlgorithm(alg);
-              if (mode === 'story') {
-                await resetStoryForAlgorithm(alg,zh);
-              }
-            }}
-            isCollapsed={isLeftPanelCollapsed}
-            onToggleCollapse={() => setIsLeftPanelCollapsed(!isLeftPanelCollapsed)}
-          />
+        {/* 左侧内容 */}
+        <div className="w-2/5 relative bg-gray-100" style={{ overflowY: 'auto', height: '100vh' }}>
+          {/* ================= Recursion · Remove Linked List Elements (Testing) ================= */}
+<Box sx={{ p: 3, pt: 0 }}>
+  {/* 顶部标题 + 语言切换 */}
+  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+    <Typography variant="h6" sx={{ color: '#333', fontWeight: 600 }}>
+      {zh ? '递归 · 移除链表元素' : 'Recursion · Remove Linked List Elements'}
+    </Typography>
+    <Stack direction="row" alignItems="center" gap={1}>
+      <Typography variant="body2">EN</Typography>
+      <Switch checked={zh} onChange={(e) => setZh(e.target.checked)} />
+      <Typography variant="body2">中文</Typography>
+    </Stack>
+  </Box>
+
+  <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+    <Typography sx={{ mb: 1.5 }}>
+      {zh
+        ? '给定链表头节点 head 和整数 val，删除所有满足 Node.val == val 的节点，并返回新的头节点。请用递归思路回答以下题目。'
+        : 'Given the head of a linked list and an integer val, remove all nodes where Node.val == val and return the new head. Answer the following using the recursive approach.'}
+    </Typography>
+    <Divider />
+  </Paper>
+
+  {/* Q1 */}
+  <MCQBlock q={MCQS[0]} zh={zh} />
+  {/* Q2 */}
+  <MCQBlock q={MCQS[1]} zh={zh} />
+  {/* Q3 (ordering) */}
+  <OrderingBlock q={ORDERING_Q} zh={zh} />
+  {/* Q4 */}
+  <MCQBlock q={MCQS[2]} zh={zh} />
+  {/* Q5 (fill-in) */}
+  <FillBlankBlock q={FILL_Q} zh={zh} />
+  {/* Q6 (Parsons) */}
+  <ParsonsBlock lines={PARSONS_LINES} zh={zh} />
+</Box>
+
         </div>
 
-        
-
-        {/* 右侧内容 - 自动扩展 */}
-        <div
-          className={`bg-white relative transition-all duration-300 ease-in-out ${
-            isLeftPanelCollapsed ? 'w-full' : 'w-3/5'
-          }`}
-          ref={rightPaneRef}
-          style={{
-            width: isLeftPanelCollapsed ? '100%' : undefined,
-            minWidth: isLeftPanelCollapsed ? '100%' : undefined,
-            marginLeft: isLeftPanelCollapsed ? 0 : '-20px', // 当左侧面板展开时，画布往左移动
-            touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
-            overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
-            overflow: 'hidden',            // 避免绘制时容器产生滚动条
-            contain: 'layout paint',       // 限定重绘范围，减少抖动
-          }}
-        >
-
-        {/* 面板折叠时的展开指示器 - 放在左下角，不挡住导航栏 */}
-        {isLeftPanelCollapsed && (
-          <Box
-            sx={{
-              position: 'fixed',
-              left: 16,
-              bottom: 64,
-              zIndex: 1000,
-            }}
-          >
-            <Tooltip title="展开面板" placement="right">
-              <IconButton
-                onClick={() => setIsLeftPanelCollapsed(false)}
-                sx={{
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  '&:hover': { 
-                    bgcolor: 'primary.dark',
-                    transform: 'scale(1.1)',
-                    boxShadow: 4,
-                  },
-                  boxShadow: 3,
-                  width: 56,
-                  height: 56,
-                  fontSize: '1.5rem',
-                  border: '3px solid white',
-                  transition: 'all 0.2s ease-in-out',
-                  // 触摸设备优化
-                  minWidth: 56,
-                  minHeight: 56,
-                }}
-              >
-                <ChevronRight />
-              </IconButton>
-            </Tooltip>
-            
-            {/* 小提示文字 */}
-            <Box
-              sx={{
-                position: 'absolute',
-                left: 70,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                bgcolor: 'rgba(0,0,0,0.7)',
-                color: 'white',
-                px: 1.5,
-                py: 0.5,
-                borderRadius: 1,
-                fontSize: '0.75rem',
-                whiteSpace: 'nowrap',
-                opacity: 0.9,
-                pointerEvents: 'none',
-              }}
-            >
-              展开
-            </Box>
-          </Box>
-        )}
-
+        {/* 右侧内容 */}
+      <div
+        className="w-3/5 bg-white relative"
+        ref={rightPaneRef}
+        style={{
+          touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
+          overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
+          overflow: 'hidden',            // 避免绘制时容器产生滚动条
+          contain: 'layout paint',       // 限定重绘范围，减少抖动
+        }}
+      >
       {/* 右栏悬浮按钮组 */}
         <Box
           position="absolute"
           top={19}
-          left={isLeftPanelCollapsed ? 300 : 280}            // 根据左侧面板状态调整位置
+          left={300}            // ✅ 靠左
           zIndex={10}
           bgcolor="rgba(255,255,255,0.9)"
           borderRadius={1}
           // boxShadow={1}
           display="flex"
           gap={1}
-          sx={{
-            transition: 'left 0.3s ease-in-out',
-          }}
         >
-          {/* <Tooltip title="Check (save this step)">
-            <IconButton color="primary" onClick={onCheck}>
-              <CheckIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Next Draw (overlay from backend)">
-            <IconButton color="success" onClick={onNextDraw}>
-              <Lightbulb />
-            </IconButton>
-          </Tooltip> */}
-          {/* <Tooltip title="Insert fixed rectangle">
-            <IconButton color="inherit" onClick={insertFixedRectangle}>
-              <CropSquareIcon />
-            </IconButton>
-          </Tooltip> */}
+         
         </Box>
-
-        {/* 覆盖 Excalidraw 左侧原生导航（工具栏）
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: 88,
-            height: '100%',
-            bgcolor: '#fff',
-            zIndex: 20,
-            pointerEvents: 'auto', // 阻止点击到原生导航
-          }}
-        /> */}
 
         {/* 遮挡 Excalidraw 左上角菜单按钮的白色遮挡物 */}
          <Box
           sx={{
             position: 'absolute',
             top: 6,
-            left: isLeftPanelCollapsed ? 6 : -14, // 根据左侧面板状态调整位置
+            left: 6,
             width: 64,
             height: 64,
             bgcolor: '#fff',
             borderRadius: 1,
             zIndex: 20,
             pointerEvents: 'auto', // 阻止点击到底层按钮
-            transition: 'left 0.3s ease-in-out',
           }}
         />
 
@@ -2823,24 +2321,21 @@ useEffect(() => {
           sx={{
             position: 'absolute',
             top: 6,
-            right: isLeftPanelCollapsed ? 6 : 26, // 根据左侧面板状态调整位置
+            right: 6,
             width: 120,
             height: 64,
             bgcolor: '#fff',
             borderRadius: 1,
             zIndex: 20,
             pointerEvents: 'auto',
-            transition: 'right 0.3s ease-in-out',
           }}
         />
 
-        {/* 当左侧面板展开时，用白色方框遮住原来的工具栏位置 */}
-        {!isLeftPanelCollapsed && (
-          <Box
+<Box
             sx={{
               position: 'absolute',
               top: 12,
-              left: isLeftPanelCollapsed ? '50%' : '60%',
+              left: '60%',
               transform: 'translateX(-50%)',
               width: '100%', // 自适应右侧面板宽度
               maxWidth: '90%', // 限制最大宽度，避免超出面板
@@ -2852,31 +2347,14 @@ useEffect(() => {
               // boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
             }}
           />
-        )}
+        
 
-        {/* 覆盖 Excalidraw 顶部中间原生工具栏 */}
-        {/* <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '70%',
-            height: 64,
-            bgcolor: '#fff',
-            zIndex: 20,
-            pointerEvents: 'auto',
-            borderBottomLeftRadius: 6,
-            borderBottomRightRadius: 6,
-          }}
-        /> */}
-
-        {/* 自定义简化工具栏（根据左侧面板状态动态调整位置） */}
+        {/* 自定义简化工具栏（顶部居中，横向排列） */}
         <Box
           sx={{
             position: 'absolute',
             top: 12,
-            left: isLeftPanelCollapsed ? '50%' : '60%',
+            left: '60%',
             transform: 'translateX(-50%)',
             zIndex: 30,
             bgcolor: 'rgba(255,255,255,1)',
@@ -2892,7 +2370,7 @@ useEffect(() => {
             transition: 'left 0.3s ease-in-out',
           }}
         >
-          {/* <Tooltip title="模式">
+          <Tooltip title="模式">
             <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
               <TuneIcon fontSize="medium" />
             </IconButton>
@@ -2946,73 +2424,7 @@ useEffect(() => {
             <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
               <SchemaIcon fontSize="medium" />
             </IconButton>
-          </Tooltip> */}
-<Tooltip title={t.toolbar_mode}>
-  <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <TuneIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_move}>
-  <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <PanToolIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_select}>
-  <IconButton size="medium" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <NavigationIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_rect}>
-  <IconButton size="medium" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <CropSquareIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_ellipse}>
-  <IconButton size="medium" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <CircleOutlinedIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_arrow}>
-  <IconButton size="medium" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <ArrowRightAltIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_line}>
-  <IconButton size="medium" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <HorizontalRuleIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_draw}>
-  <IconButton size="medium" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <CreateIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_text}>
-  <IconButton size="medium" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <TextFieldsIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_eraser}>
-  <IconButton size="medium" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <EraserIcon sx={{ fontSize: '36px', position: 'relative', top: -2 }} />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_library}>
-  <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <SchemaIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
+          </Tooltip>
         </Box>
 
         {/* 模式选择弹窗（美观卡片样式） */}
@@ -3509,141 +2921,7 @@ useEffect(() => {
         )}
         {/* <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} /> */}
         
-        {/* 调试信息显示 */}
-        {/* <Box
-          sx={{
-            position: 'absolute',
-            top: 10,
-            right: 10,
-            bgcolor: 'background.paper',
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 1,
-            px: 2,
-            py: 1,
-            fontSize: '0.75rem',
-            color: 'text.secondary',
-            zIndex: 100,
-            opacity: 0.8,
-            maxWidth: 350,
-          }}
-        > */}
-          {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            <Box>🔍 调试信息</Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              模式: {mode} | 步骤: {mode === 'story' ? currentStepIndex + 1 : '探索'}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              故事模式场景数: {Object.keys(scenes).length}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              当前步骤: {currentStepIndexRef.current + 1}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              当前步骤元素数: {scenes[currentStepIndexRef.current]?.elements?.length || 0}
-          </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              探索模式元素数: {exploreModeCanvas.elements.length}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              当前画布元素数: {excalidrawAPI?.getSceneElements()?.length || 0}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              最后保存模式: {debugInfo.lastSavedMode}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              最后保存步骤: {debugInfo.lastSavedStoryStep}
-            </Box>
-            <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
-              最后保存探索元素: {debugInfo.lastSavedExploreElements}
-            </Box>
-          </Box> */}
-        {/* </Box> */}
-        
-        {/* 移动设备提示 */}
-        {/* {(isMobile || isTablet) && (
-          <Box
-            sx={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              bgcolor: 'warning.light',
-              color: 'warning.contrastText',
-              p: 2,
-              borderRadius: 2,
-              zIndex: 1000,
-              textAlign: 'center',
-              maxWidth: '90vw',
-              boxShadow: 3,
-              // 移动设备特定样式
-              ...(isTablet && {
-                fontSize: '1.1rem',
-                p: 3,
-                maxWidth: '80vw',
-              }),
-              ...(isMobile && {
-                fontSize: '0.9rem',
-                p: 1.5,
-                maxWidth: '95vw',
-              }),
-            }}
-          >
-            <Typography variant="h6" gutterBottom>
-              📱 移动设备提示
-            </Typography>
-            <Typography variant="body2">
-              {isTablet ? 'iPad' : '手机'} 用户请注意：
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              • 白板功能在触摸设备上可能有限制
-            </Typography>
-            <Typography variant="body2">
-              • 建议使用手指或触控笔进行绘制
-            </Typography>
-            <Typography variant="body2">
-              • 如果遇到问题，请尝试刷新页面
-            </Typography>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={() => window.location.reload()}
-              sx={{ mt: 2 }}
-            >
-              刷新页面
-            </Button>
-          </Box>
-        )} */}
-
-        {/* 根据mode显示不同的组件 */}
-        {mode === 'story' ? (
-          <StoryPlayer 
-            steps={steps} 
-            onStepChange={handleStepChange} 
-            stepStatuses={stepStatuses}
-            setStepStatuses={setStepStatuses}
-            onCheck={onCheck}
-            onNextDraw={onNextDraw}
-            notes={notes}
-            isNotesOpen={isNotesOpen}
-            stepNotes={stepNotes}
-            currentStepIndex={currentStepIndex}
-            stepChecks={stepChecks}
-            containerRef={rightPaneRef}
-            titles={storyAlgorithm === 'iter' ? titles_iter : undefined}
-            hints={storyAlgorithm === 'iter' ? hints_iter : undefined}
-            isLeftPanelCollapsed={isLeftPanelCollapsed}
-            zh={zh}
-          />
-                 ) : (
-           <ExploreMode 
-             onCheck={onCheck}
-             onNextDraw={onNextDraw}
-             notes={notes}
-             containerRef={rightPaneRef}
-             isLeftPanelCollapsed={isLeftPanelCollapsed}
-           />
-         )}
+       
 
         {/* AI 新增元素闪烁动画层（仅显示 1.2s） */}
         {aiFlash && excalidrawAPI && (
@@ -3813,24 +3091,7 @@ useEffect(() => {
 
 
 
-        {/* {excalidrawAPI && (
-          <StoryPlayer
-            steps={steps}
-            excalidrawAPI={excalidrawAPI}
-            onStepChange={(stepText, index) => {
-              setCurrentStepText(stepText);
-              setCurrentStepIndex(index);
-              // 加载保存的步骤内容
-              const savedStep = savedSteps.find(step => step.index === index);
-              if (savedStep) {
-                excalidrawAPI.updateScene({
-                  elements: Array.from(savedStep.elements) as any[],
-                  files: savedStep.files,
-                });
-              }
-            }}
-          />
-        )} */}
+       
         </div>
       </div>
       {/* Notes功能已集成到Story卡片中，不再需要单独的Modal */}

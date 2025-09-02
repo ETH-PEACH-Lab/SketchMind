@@ -38,6 +38,8 @@ interface StoryPlayerProps {
   containerRef?: React.RefObject<HTMLElement | null>; // 右侧画布容器，用于边界约束
   titles?: string[]; // 可选：外部自定义标题
   hints?: string[];  // 可选：外部自定义提示
+  isLeftPanelCollapsed?: boolean; // 新增：左侧面板是否折叠
+  zh?: boolean; // 新增：语言
 }
 
 export default function StoryPlayer({
@@ -55,12 +57,14 @@ export default function StoryPlayer({
   containerRef,
   titles: externalTitles,
   hints: externalHints,
+  isLeftPanelCollapsed = false, // 新增：左侧面板是否折叠
+  zh = true, // 新增：语言
 }: StoryPlayerProps) {
 
   const [index, setIndex] = useState(0);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const cardRef = useRef<HTMLDivElement | null>(null)
-  const [cardSize, setCardSize] = useState({ width: 550, height: 320 })
+  const [cardSize, setCardSize] = useState({ width: 500, height: 280 })
   // const [stepStatuses, setStepStatuses] = useState<string[]>(
   //   Array(steps.length).fill("pending")
   // );
@@ -115,7 +119,9 @@ export default function StoryPlayer({
   useEffect(() => {
     const cw = (containerRef?.current as any)?.clientWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1200)
     const ch = (containerRef?.current as any)?.clientHeight ?? (typeof window !== 'undefined' ? window.innerHeight : 800)
-    const next = { x: cw * 0.65, y: ch * 0.5 } // 水平偏右，垂直居中
+    // 根据左侧面板状态调整水平位置
+    const horizontalMultiplier = isLeftPanelCollapsed ? 0.65 : 0.55 // 左侧面板展开时，卡片更靠左
+    const next = { x: cw * horizontalMultiplier, y: ch * 0.5 } // 水平位置，垂直居中
     setPosition(clampToContainer(next.x, next.y))
     // 初始测量后，用实际高度做一次精确垂直居中
     setTimeout(() => {
@@ -129,7 +135,7 @@ export default function StoryPlayer({
       }
     }, 0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isLeftPanelCollapsed])
 
   // 监听窗口尺寸变化，保持卡片在可视区域内
   useEffect(() => {
@@ -294,7 +300,7 @@ const renderStatusIcon = (i: number) => {
   //     "Only one node left.\nLet’s connect the last node to finish the merged list.",
   //     "Great job! You've built the merged list step by step.\nCheck your drawing to make sure all nodes are included and correctly ordered."
   // ];
-const titles = [
+const titlesZH = [
     '开始绘制',
     // '比较第一个节点',
     '第一次合并',
@@ -306,7 +312,7 @@ const titles = [
     '🎉 全部完成！'
 ];
 
-const hints = [
+const hintsZH = [
     "我们开始吧！现在有两个链表：\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。",
     "现在从 list2 中取出 1，开始绘制合并后的链表。\n然后从 list2 中用红色打叉❌标记移除这个节点。",
     "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？\n用绿色圆圈🟢标记出你选择的节点。",
@@ -318,6 +324,35 @@ const hints = [
     "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。",
     "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。"
   ];
+  const titlesEN = [
+    "Start Drawing",
+    // "Compare the First Node",
+    "First Merge",
+    "Compare Again",
+    "Continue Merging",
+    "Challenge: Do It Twice",
+    "Almost Done!",
+    // "Finish the Merge",
+    "🎉 All Done!"
+  ];
+  const hintsEN = [
+    "Let's start! Now we have two linked lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nLook at the head nodes of list1 and list2 (both are 1).\nWhich one should we add first?\nMark your chosen head node with a green circle 🟢.",
+    
+    "Now take the 1 from list2 to begin drawing the merged list.\nThen remove this node from list2 by marking it with a red ❌.",
+    
+    "Compare the new heads: list1 is 1, list2 is 3.\nWhich one should be added next to the merged list?\nMark your chosen node with a green circle 🟢.",
+    
+    "Add the 1 from list1 to the merged list.\nUpdate list1 by removing this node with a red ❌, and then continue.",
+    
+    "Do it twice in a row by yourself! Now list1: 2→4, list2: 3→4\nRule: 🟢 choose the smaller node → attach to the merged list → remove it from the original list with ❌\nFinish merging by adding two new nodes to the merged list.",
+    
+    "Keep going! Merge the next node.\nBetween 4 and 4, make your choice and draw the updated merged list.",
+    
+    "Great job!\nLet's connect the last node to finish the merged list.\nCheck your drawing to ensure all nodes are included and in the correct order."
+  ];
+  const titles = zh ? titlesZH : titlesEN;
+const hints = zh ? hintsZH : hintsEN;
+
 // const titles = [
 //     '开始绘制递归树',
 //     '分解 \( F(5) \)',
@@ -359,11 +394,13 @@ const hints = [
 
   // Wrap handlers to show loading
   const handleCheck = async () => {
+  console.log('🔍 StoryPlayer handleCheck 被调用');
   setLoading(true);
   setLoadingType("check");
   try {
+    console.log('📞 调用 onCheck 函数...');
     const result = await onCheck();
-    console.log("Check result:", result);
+    console.log("✅ Check result:", result);
     if (result && typeof result === 'object' && 'isValid' in result && typeof result.isValid === "boolean") {
     setStepStatuses((prev) => {
       const next = [...prev];
@@ -399,7 +436,7 @@ const hints = [
         position: 'absolute',
         top: position.y,
         left: position.x,
-        width: 550,
+        width: 300,
         borderRadius: 3,
         overflow: 'hidden',
         zIndex: 9999,
@@ -437,7 +474,7 @@ const hints = [
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
-    p: 2,
+    p: 1.5,
     bgcolor: '#fafafa',
   }}
 >
@@ -451,7 +488,7 @@ const hints = [
       flexWrap: 'wrap',
       overflow: 'visible',
       whiteSpace: 'normal',
-      pr: 20, // 给右侧按钮留更充足的空间，避免覆盖
+      pr: 16, // 给右侧按钮留更紧凑的空间
     }}
     ref={navContainerRef}
   >
@@ -479,10 +516,10 @@ const hints = [
   <Box
   display="flex"
   alignItems="center"
-  gap={2}
+  gap={1.5}
   sx={{
     position: 'absolute',
-    right: 40,
+    right: 16,
     top: '50%',
     transform: 'translateY(-50%)',
     zIndex: 2,
@@ -497,8 +534,8 @@ const hints = [
         disabled={loadingType === "check"}
       >
         {loadingType === "check"
-          ? <CircularProgress size={28} color="inherit" />
-          : <SendIcon sx={{ fontSize: 32 }} />}
+          ? <CircularProgress size={24} color="inherit" />
+          : <SendIcon sx={{ fontSize: 28 }} />}
       </IconButton>
     </span>
   </Tooltip>
@@ -510,8 +547,8 @@ const hints = [
         disabled={loadingType === "draw"}
       >
         {loadingType === "draw"
-          ? <CircularProgress size={28} color="inherit" />
-          : <LightbulbIcon sx={{ fontSize: 32 }} />}
+          ? <CircularProgress size={24} color="inherit" />
+          : <LightbulbIcon sx={{ fontSize: 28 }} />}
       </IconButton>
       
     </span>
@@ -543,11 +580,11 @@ const hints = [
 </Box>
 
       {/* 内容展示区域 */}
-      <CardContent sx={{ cursor: "default" }}>
-              <Typography variant="h6" gutterBottom>
+      <CardContent sx={{ cursor: "default", p: 2 }}>
+              <Typography variant="h6" gutterBottom sx={{ fontSize: '1.1rem', mb: 1 }}>
                 {(externalTitles || titles)[index] || `Step ${index + 1}`}
               </Typography>
-              <Typography variant="body2" color="text.secondary" whiteSpace="pre-line" mb={2}>
+              <Typography variant="body2" color="text.secondary" whiteSpace="pre-line" mb={1.5} sx={{ fontSize: '0.875rem' }}>
                 {(externalHints || hints)[index] || steps[index]?.stepText || ""}
               </Typography>
 
@@ -556,29 +593,29 @@ const hints = [
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 0.75,
-                  mb: 1.5,
-                  p: 0.75,
+                  gap: 0.5,
+                  mb: 1,
+                  p: 0.5,
                   borderRadius: 1,
                   bgcolor: 'rgba(255,193,7,0.08)'
                 }}
               >
-                <WarningAmberIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-                <Typography variant="caption" color="text.secondary">
+                <WarningAmberIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                   AI 生成/检查结果仅供参考，可能不准确，请自行判断。
                 </Typography>
               </Box>
       
               {/* Notes区域 - 当当前步骤有提示时显示（默认展开，无需点击） */}
               {displayNote && (
-                <Box sx={{ mb: 2 }}>
+                <Box sx={{ mb: 1.5 }}>
                   <Box 
                     display="flex" 
                     alignItems="center" 
-                    gap={1} 
+                    gap={0.75} 
                     sx={{ 
                       cursor: 'pointer',
-                      p: 1,
+                      p: 0.75,
                       borderRadius: 1,
                       bgcolor: isErrorNote ? '#f5f5f5' : '#f5f5f5',
                       '&:hover': { bgcolor: isErrorNote ? '#eeeeee' : '#e0e0e0' }
@@ -593,7 +630,7 @@ const hints = [
                       <Chip
                         label={stepChecks[currentStepIndex].isValid ? '检查: ✅' : '检查: ❌'}
                         size="small"
-                        sx={{ ml: 1 }}
+                        sx={{ ml: 0.75 }}
                       />
                     )}
                     {/* <ExpandMoreIcon 
@@ -612,14 +649,14 @@ const hints = [
                   <Collapse in={isNotesExpanded}>
                     <Box 
                       sx={{ 
-                        mt: 1, 
-                        p: 2, 
+                        mt: 0.75, 
+                        p: 1.5, 
                         bgcolor: isErrorNote ? '#f7f7f7' : '#fff3e0', 
                         borderRadius: 1,
                         border: isErrorNote ? '1px solid #e0e0e0' : '1px solid #ffb74d'
                       }}
                     >
-                      <Typography variant="body2" whiteSpace="pre-line" sx={{ color: isErrorNote ? 'text.secondary' : 'text.primary' }}>
+                      <Typography variant="body2" whiteSpace="pre-line" sx={{ color: isErrorNote ? 'text.secondary' : 'text.primary', fontSize: '0.875rem' }}>
                         {displayNote}
                       </Typography>
                     </Box>
@@ -627,23 +664,26 @@ const hints = [
                 </Box>
               )}
       
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1 }}>
                 <Button
                   variant="outlined"
+                  size="small"
                   onPointerDown={(e) => { e.stopPropagation(); }}
                   onClick={(e) => {
                     e.stopPropagation();
                     changeStep(index - 1);
                   }}
                   disabled={index === 0}
+                  sx={{ fontSize: '0.8rem', py: 0.5, px: 1.5 }}
                 >
                   ◀ 上一步
                 </Button>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
                   {index + 1} / {steps.length}
                 </Typography>
                 <Button
                   variant="outlined"
+                  size="small"
                   onPointerDown={(e) => { e.stopPropagation(); }}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -651,6 +691,7 @@ const hints = [
                     changeStep(index + 1);
                   }}
                   disabled={index === steps.length - 1}
+                  sx={{ fontSize: '0.8rem', py: 0.5, px: 1.5 }}
                 >
                   下一步 ▶
                 </Button>

@@ -81,18 +81,65 @@ type MCQ = {
   };
   
   // ==== Questions content (no answers shown) ====
+  // Q1 - Jump Game II Fill in the Blank
+  const JUMP_GAME_Q: FillBlankQ = {
+    id: 'q1',
+    promptEN: 'Q1 · Complete the greedy solution skeleton:',
+    promptZH: 'Q1 · 完成贪心算法解决方案框架：',
+    blanks: [
+      { id: 'b1', placeholder: 'Update farthest reach' },
+      { id: 'b2', placeholder: 'Increment jumps' },
+      { id: 'b3', placeholder: 'Update end position' },
+    ],
+    footerEN: `Background: Jump Game II
+Given a 0-indexed integer array nums of length n. You are initially positioned at index 0.
+
+Each element nums[i] represents the maximum jump length at position i. In other words, if you are at index i, you can jump to any index (i + j) where:
+
+0 <= j <= nums[i] and
+i + j < n
+Return the minimum number of jumps to reach n - 1. The test cases are generated such that you can reach n - 1.
+
+int jump(vector<int>& nums) {
+    int n = nums.size();
+    int jumps = 0, end = 0, farthest = 0;
+    for (int i = 0; i < n - 1; ++i) {
+        _______;   // (1)
+        if (i == end) {
+            _______;   // (2)
+            _______;   // (3)
+        }
+    }
+    return jumps;
+}
+
+(Answers: (1) farthest = max(farthest, i + nums[i]), (2) jumps++, (3) end = farthest)`,
+    footerZH: `背景：跳跃游戏II
+给定一个长度为 n 的 0 索引整数数组 nums。初始位置在下标 0。
+
+每个元素 nums[i] 表示从索引 i 向后跳转的最大长度。换句话说，如果你在索引 i 处，你可以跳转到任意 (i + j) 处：
+
+0 <= j <= nums[i] 且
+i + j < n
+返回到达 n - 1 的最小跳跃次数。测试用例保证可以到达 n - 1。
+
+int jump(vector<int>& nums) {
+    int n = nums.size();
+    int jumps = 0, end = 0, farthest = 0;
+    for (int i = 0; i < n - 1; ++i) {
+        _______;   // (1)
+        if (i == end) {
+            _______;   // (2)
+            _______;   // (3)
+        }
+    }
+    return jumps;
+}
+
+(答案：(1) farthest = max(farthest, i + nums[i]), (2) jumps++, (3) end = farthest)`,
+  };
+
   const MCQS: MCQ[] = [
-    {
-      id: 'q1',
-      promptEN: 'Q1 · What is the core recursive logic for removing elements from a linked list?',
-      promptZH: 'Q1 · 递归删除链表元素的核心逻辑是什么？',
-      options: [
-        { key: 'A', textEN: 'Traverse and directly delete all target nodes', textZH: '从头到尾遍历并直接删除所有目标值节点' },
-        { key: 'B', textEN: 'Solve the subproblem first (rest of the list), then decide whether to keep the current node', textZH: '先解决子问题（余下链表），再决定是否保留当前节点' },
-        { key: 'C', textEN: 'Loop until encountering a node equal to val, then stop', textZH: '循环直到遇到等于 val 的节点就停止' },
-        { key: 'D', textEN: 'Copy into an array, filter, rebuild the list', textZH: '复制到数组，过滤后重建链表' },
-      ],
-    },
     {
       id: 'q2',
       promptEN: 'Q2 · True or False: The base case is when the list is empty (head == nullptr).',
@@ -103,9 +150,9 @@ type MCQ = {
       ],
     },
     {
-      id: 'q4',
-      promptEN: 'Q4 · Input: head = [6, 6, 3], val = 6. When recursion first expands, which node is processed first (the first recursive call goes to)?',
-      promptZH: 'Q4 · 输入：head = [6, 6, 3], val = 6。递归首次展开时，先处理哪个节点（首次递归调用指向的节点）？',
+      id: 'q3',
+      promptEN: 'Q3 · Input: head = [6, 6, 3], val = 6. When recursion first expands, which node is processed first (the first recursive call goes to)?',
+      promptZH: 'Q3 · 输入：head = [6, 6, 3], val = 6。递归首次展开时，先处理哪个节点（首次递归调用指向的节点）？',
       options: [
         { key: 'A', textEN: 'The first node with value 6', textZH: '值为 6 的第一个节点' },
         { key: 'B', textEN: 'The second node with value 6', textZH: '值为 6 的第二个节点' },
@@ -116,9 +163,9 @@ type MCQ = {
   ];
   
   const ORDERING_Q: OrderingQ = {
-    id: 'q3',
-    promptEN: 'Q3 · Arrange the steps into the correct recursive process.',
-    promptZH: 'Q3 · 将以下步骤按正确的递归流程排序。',
+    id: 'q4',
+    promptEN: 'Q4 · Arrange the steps into the correct recursive process.',
+    promptZH: 'Q4 · 将以下步骤按正确的递归流程排序。',
     // promptZH: '将以下步骤按正确的递归流程排序。',
     stepsEN: [
       'Check if the list is empty',
@@ -130,16 +177,16 @@ type MCQ = {
   
   const FILL_Q: FillBlankQ = {
     id: 'q5',
-    promptEN: 'Q5 · Fill in the blanks (C++):',
-    promptZH: 'Q5 · 填空（C++）：',
+    promptEN: 'Q5 · Fill in the Blanks',
+    promptZH: 'Q5 · 填空',
     blanks: [
-      { id: 'b1', placeholder: 'base condition' },
-      { id: 'b2', placeholder: 'return value when head->val == val' },
+      { id: 'b1', placeholder: 'Condition' },
+      { id: 'b2', placeholder: 'Return value' },
     ],
     footerEN:
-      'if (__________) return head;\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? _____________ : head;',
+      'if (__________) return head;\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? _____________ : head;\n(Answers: Condition: head == nullptr, Return value: head->next)',
     footerZH:
-      'if (__________) return head;\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? _____________ : head;',
+      'if (__________) return head;\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? _____________ : head;\n(答案：条件：head == nullptr，返回值：head->next)',
   };
   
   // ==== Small UI blocks (no correctness/answers shown) ====
@@ -244,7 +291,7 @@ type MCQ = {
           {zh ? 'Q6 · Parsons 拼图（代码排序）' : 'Q6 · Parsons Problem (Code Ordering)'}
         </Typography>
         <Typography variant="body2" sx={{ mb: 1 }}>
-          {zh ? '将下列代码重排为正确的递归函数：' : 'Reorder the lines to form the correct recursive function:'}
+          {zh ? '将下列代码重排为正确的递归函数：' : 'Reorder these lines to form the correct recursive function:'}
         </Typography>
         <Stack gap={1}>
           {order.map((idx, i) => (
@@ -2259,18 +2306,31 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
     <Divider />
   </Paper>
 
-  {/* Q1 */}
-  <MCQBlock q={MCQS[0]} zh={zh} />
+  {/* Q1 (Jump Game Fill-in) */}
+  <FillBlankBlock q={JUMP_GAME_Q} zh={zh} />
   {/* Q2 */}
+  <MCQBlock q={MCQS[0]} zh={zh} />
+  {/* Q3 */}
   <MCQBlock q={MCQS[1]} zh={zh} />
-  {/* Q3 (ordering) */}
+  {/* Q4 (ordering) */}
   <OrderingBlock q={ORDERING_Q} zh={zh} />
-  {/* Q4 */}
-  <MCQBlock q={MCQS[2]} zh={zh} />
   {/* Q5 (fill-in) */}
   <FillBlankBlock q={FILL_Q} zh={zh} />
   {/* Q6 (Parsons) */}
   <ParsonsBlock lines={PARSONS_LINES} zh={zh} />
+  
+  {/* 答案提示 */}
+  <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+    <Typography fontWeight={700} gutterBottom>
+      {zh ? 'Q6 正确答案：' : 'Q6 Correct Answer:'}
+    </Typography>
+    <Typography variant="body2" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
+      {zh ? 
+        'if (head == nullptr) {\nreturn head;\n}\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? head->next : head;' :
+        'if (head == nullptr) {\nreturn head;\n}\nhead->next = removeElements(head->next, val);\nreturn (head->val == val) ? head->next : head;'
+      }
+    </Typography>
+  </Paper>
 </Box>
 
         </div>

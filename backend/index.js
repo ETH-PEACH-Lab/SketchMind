@@ -369,12 +369,16 @@ const algoIterZh = `算法（迭代合并有序链表）：
 - 否则（含相等），接 p2 到 prev.next，p2 前进（注意：相等时选 list2，保持与递归定义一致）；
 prev 同步前进。任一链表耗尽后，把剩余链表整体接到 prev.next。`;
 
-const algoGreedZh = `算法（贪心 · 跳跃游戏）：
-维护“最远可达下标” farthest。遍历下标 i：
-- 若 i ≤ farthest，则可站上 i，更新 farthest = max(farthest, i + nums[i])；
-- 若 i > farthest，则出现不可达断层，返回 false；
-- 任何时刻若 farthest ≥ n-1（末尾下标），立即返回 true。
-贪心要点：每到一个可达位置，都只做一件事——把“最远覆盖”往右推到能达到的最远处。`;
+const algoGreedZh = `
+跳跃游戏:
+给你一个非负整数数组 nums，你最初位于数组的 第一个下标。数组中的每个元素代表你在该位置可以跳跃的最大长度。
+判断你是否能够到达最后一个下标，如果可以，返回 true；否则，返回 false。
+算法（贪心 · 跳跃游戏）：
+- 依次遍历数组中的每一个位置，并实时维护 最远可以到达的位置
+- 对于当前遍历到的位置 x，如果它在最远可以到达的位置的范围内，那么我们就可以从起点通过若干次跳跃到达该位置
+- 用 x+nums[x] 更新最远可以到达的位置
+- 如果最远可以到达的位置 ≥ 数组最后一个位置，返回 True；否则返回 False
+`;
 // —— 根据选择拼接算法说明 ——
 // algorithm ∈ 'rec' | 'iter' | 'greed'
 const algoDescZh =
@@ -986,12 +990,18 @@ const algoIterZh = `算法（迭代合并有序链表）：
 - 否则（含相等），接 p2 到 prev.next，p2 前进（注意：相等时选 list2，保持与递归定义一致）；
 prev 同步前进。任一链表耗尽后，把剩余链表整体接到 prev.next。`;
 
-const algoGreedZh = `算法（贪心 · 跳跃游戏）：
-维护“最远可达下标” farthest。遍历下标 i：
-- 若 i ≤ farthest，则可站上 i，更新 farthest = max(farthest, i + nums[i])；
-- 若 i > farthest，则出现不可达断层，返回 false；
-- 任何时刻若 farthest ≥ n-1（末尾下标），立即返回 true。
-贪心要点：每到一个可达位置，都只做一件事——把“最远覆盖”往右推到能达到的最远处。`;
+const algoGreedZh = `跳跃游戏:
+给你一个非负整数数组 nums，你最初位于数组的 第一个下标。数组中的每个元素代表你在该位置可以跳跃的最大长度。
+判断你是否能够到达最后一个下标，如果可以，返回 true；否则，返回 false。
+算法（贪心 · 跳跃游戏）：
+- 依次遍历数组中的每一个位置，并实时维护 最远可以到达的位置
+- 对于当前遍历到的位置 x，如果它在最远可以到达的位置的范围内，那么我们就可以从起点通过若干次跳跃到达该位置
+- 用 x+nums[x] 更新最远可以到达的位置
+- 如果最远可以到达的位置 ≥ 数组最后一个位置，返回 True；否则返回 False。
+
+要准确的推理公式是否计算正确，计算可达区间🟨位置是否正确 最远可达位置🚩指向的数组位置是否正确，是否在可达区间🟨内
+说明为什么是这个位置，不要自己脑补
+`;
 // —— 根据选择拼接算法说明 ——
 // algorithm ∈ 'rec' | 'iter' | 'greed'
 const algoDescZh =
@@ -1000,7 +1010,7 @@ const algoDescZh =
   /* 'greed' */           algoGreedZh;
 
 // —— 评审提示（中文，统一输出要求与判定准则）——
-const prompt = `
+const prompt_raw = `
 你是一名仅判断“当前步骤是否符合算法描述”的图示评审助手。输入是一张 PNG 算法示意图与步骤文字。
 
 【算法说明（最高准则）】
@@ -1019,11 +1029,53 @@ ${previousStepText ? `（可出现但不作为必须条件）上一阶段：\n${
 严格返回一个 JSON 对象（仅此一行）：
 {
   "isValid": boolean,
-  "message": "用中文简要说明原因"
+  "message": "用中文简要说明你做出判断的原因"
 }
 输出规则（非常重要）：只能有一个对象；不得包含任何额外文本；使用 ASCII 引号。
 `.trim();
+const prompt_greed = `你是一名仅判断“当前步骤是否符合算法描述”的图示评审助手。输入是一张 PNG 算法示意图与步骤文字。你的任务是：严格按下述规则核对本步是否正确；若任一关键项不满足或图中信息缺失，则判定不通过。
 
+【算法说明（最高准则）｜跳跃游戏·贪心】
+- 依次遍历数组位置 i，维护最远可达位置 farthest。
+- 对每个 i（且 i ≤ farthest），用 candidate = i + nums[i] 更新：farthest = max(farthest, candidate)如果值一样就不变。
+- 涂色数组，绿框下标范围从0到farthest
+- 若 farthest ≥ n-1 可达终点；但本题当前仅校验“本步更新是否正确”。
+
+【步骤文字】
+${previousStepText ? `（可出现但不作为必须条件）上一阶段：\n${previousStepText}\n` : ''}（必须满足!!!）当前步骤：\n${currentStepText}
+
+【评审准则】
+- 以“算法说明”为最高准则：若图像与算法冲突，判定不通过。
+- 只验证“当前步骤”的必要条件；图中包含上一阶段元素是允许的。
+
+
+【必须从图中读到的元素】
+- 当前指针 i 指向的下标；
+- 该下标格子的数值 nums[i]；
+- 已涂绿色方框的可达区间（应是从 0 开始的连续区间）；
+- 最远可达边界🚩所指向的下标（若图未显式给出 farthest_old，则以当前绿色可达区间的最右端作为 farthest_old）。
+
+【本步判定清单（四项全满足才算通过）】
+1) 计算正确：从图中读出 i 与 nums[i]，得到 candidate = i + nums[i]。
+2) 最远边界正确：记 farthest，应更新为 max(farthest, candidate)
+3) 区间一致：绿色可达区间必须精确覆盖 [0 .. farthest]（连续且包含端点）；若图声称“已更新”，绿色可达区间右端不能停在 farthest_new 之前或越过它。
+4) 自洽性：🚩的值必须位于上色的绿色可达区间下标范围内；若 i > farthest（即 i 不可达），则本步必定不通过。
+重点检测图像中 farthest的值是否正确，方框上色是否正确，candidate的值是否正确
+
+【输出】
+严格返回一行 JSON：
+{
+  "message": "用中文简要说明原因；给出你从图中读到的 i、nums[i]、应有的🚩 farthest，以及绿色可达区间的具体下标。","isValid": boolean,
+}
+只能输出一个对象；不得包含任何额外文本；使用 ASCII 引号。
+只要message说不正确isvalid就是false
+
+【示例（仅供理解，不要原样输出）】
+- 若图中 i=0、nums[0]=3，而绿色可达区间只到 2 且🚩未指到 3，则：
+{"message": "i=0，nums[0]=3，应得 farthest=3；图中绿色可达区间到0且🚩=0，未按本步更新。","isValid": false}
+
+`;
+const prompt = algorithm === 'greed' ? prompt_greed : prompt_raw;
 console.log(prompt);
 
     // 调用 Google GenAI 模型

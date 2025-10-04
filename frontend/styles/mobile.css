@@ -28,16 +28,21 @@
 
 /* iPad 特定优化 */
 @media (min-width: 768px) and (max-width: 1024px) {
+  /* 当根节点带有 device-tablet 时，应用更强的样式约束 */
+  .device-tablet .excalidraw .App-menu_top,
   .excalidraw .App-menu_top {
     font-size: 14px !important;
   }
   
+  .device-tablet .excalidraw .App-menu_top__left,
+  .device-tablet .excalidraw .App-menu_top__right,
   .excalidraw .App-menu_top__left,
   .excalidraw .App-menu_top__right {
     padding: 12px !important;
   }
   
   /* 简化iPad上的工具栏 */
+  .device-tablet .excalidraw .App-menu_top__left .App-menu_top__left__buttons,
   .excalidraw .App-menu_top__left .App-menu_top__left__buttons {
     gap: 8px !important;
   }
@@ -63,22 +68,27 @@
 
 /* 移动设备视口优化 */
 @media (max-width: 1024px) {
+  .device-tablet .excalidraw,
   .excalidraw {
     font-size: 16px !important; /* 防止iOS缩放 */
   }
   
   /* 优化触摸绘制 */
+  .device-tablet .excalidraw .canvas-container,
   .excalidraw .canvas-container {
     cursor: crosshair !important;
   }
   
   /* 简化移动端界面 */
+  .device-tablet .excalidraw .App-menu_top,
   .excalidraw .App-menu_top {
     height: auto !important;
     min-height: 48px !important;
   }
   
   /* 优化触摸按钮间距 */
+  .device-tablet .excalidraw .App-menu_top__left,
+  .device-tablet .excalidraw .App-menu_top__right,
   .excalidraw .App-menu_top__left,
   .excalidraw .App-menu_top__right {
     gap: 4px !important;
@@ -87,6 +97,7 @@
 
 /* 触摸设备画布优化 */
 @media (hover: none) and (pointer: coarse) {
+  .device-tablet .excalidraw .canvas-container,
   .excalidraw .canvas-container {
     /* 优化触摸绘制性能 */
     will-change: transform !important;
@@ -94,11 +105,13 @@
   }
   
   /* 确保触摸绘制区域足够大 */
+  .device-tablet .excalidraw .canvas-container canvas,
   .excalidraw .canvas-container canvas {
     touch-action: none !important;
   }
   
   /* 优化触摸工具栏 */
+  .device-tablet .excalidraw .App-menu_top,
   .excalidraw .App-menu_top {
     background: rgba(255, 255, 255, 0.95) !important;
     backdrop-filter: blur(10px) !important;
@@ -124,13 +137,29 @@
 
 /* 横屏模式优化 */
 @media (max-width: 1024px) and (orientation: landscape) {
+  .device-tablet .excalidraw .App-menu_top,
   .excalidraw .App-menu_top {
     height: 40px !important;
   }
   
+  .device-tablet .excalidraw .App-menu_top button,
+  .device-tablet .excalidraw .App-menu_top .ToolIcon,
   .excalidraw .App-menu_top button,
   .excalidraw .App-menu_top .ToolIcon {
     min-height: 36px !important;
     min-width: 36px !important;
   }
+}
+
+/* 桌面端恢复更完整的工具栏（避免被移动端规则隐藏） */
+.device-desktop .excalidraw .App-menu_top__left .App-menu_top__left__buttons,
+.device-desktop .excalidraw .App-menu_top__right .App-menu_top__right__buttons {
+  display: flex !important;
+}
+
+/* 平板端进一步放大触控目标（独立于通用媒体查询） */
+.device-tablet .excalidraw .App-menu_top button,
+.device-tablet .excalidraw .App-menu_top .ToolIcon {
+  min-height: 44px !important;
+  min-width: 44px !important;
 }

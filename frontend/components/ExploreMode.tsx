@@ -17,7 +17,7 @@ interface ExploreModeProps {
   onNextDraw: () => void;
   notes?: string;
   containerRef?: React.RefObject<HTMLElement | null>;
-  isLeftPanelCollapsed?: boolean; // 新增：左侧面板是否折叠
+
 }
 
 export default function ExploreMode({
@@ -25,7 +25,6 @@ export default function ExploreMode({
   onNextDraw,
   notes = '',
   containerRef,
-  isLeftPanelCollapsed = false, // 新增：左侧面板是否折叠
 }: ExploreModeProps) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [cardSize, setCardSize] = useState({ width: 420, height: 260 });
@@ -54,7 +53,7 @@ export default function ExploreMode({
     const cw = (containerRef?.current as any)?.clientWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1200)
     const ch = (containerRef?.current as any)?.clientHeight ?? (typeof window !== 'undefined' ? window.innerHeight : 800)
     // 根据左侧面板状态调整水平位置
-    const horizontalMultiplier = isLeftPanelCollapsed ? 0.65 : 0.55 // 左侧面板展开时，卡片更靠左
+    const horizontalMultiplier = 0.5 // 卡片居中显示
     const next = { x: cw * horizontalMultiplier, y: ch * 0.5 }
     setPosition(clampToContainer(next.x, next.y))
     setTimeout(() => {
@@ -68,7 +67,7 @@ export default function ExploreMode({
       }
     }, 0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeftPanelCollapsed])
+  }, [])
 
   // 拖动逻辑（Pointer，支持触控）
   const startDrag = (e: React.PointerEvent) => {

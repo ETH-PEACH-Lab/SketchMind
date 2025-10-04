@@ -1,11 +1,11 @@
 import dynamic from 'next/dynamic';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 // import StoryPlayer from '../components/StoryPlayer';
 // 顶部先引入 MUI 组件
-import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon } from '@mui/material'
-import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book } from '@mui/icons-material'
-import { Paper, Divider, RadioGroup, Radio, FormControlLabel, TextField, Switch } from '@mui/material';
-
+import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon, Switch, Collapse, Tabs, Tab, CircularProgress } from '@mui/material'
+import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book, ChevronRight, ChevronLeft, BugReport as BugReportIcon, PlayArrow, CloudUpload } from '@mui/icons-material'
 import TuneIcon from '@mui/icons-material/Tune';
 import CropSquareIcon from '@mui/icons-material/CropSquare';
 import PanToolIcon from '@mui/icons-material/PanTool';
@@ -46,7 +46,7 @@ const Excalidraw = dynamic(
   { ssr: false }
 );
 
-// const MarkdownWithDrawing = dynamic(() => import('../../components/MarkdownWithDrawing'), { ssr: false });
+// const MarkdownWithDrawing = dynamic(() => import('../components/MarkdownWithDrawing'), { ssr: false });
 // const SVGWhiteboard = dynamic(() => import('../components/SVGWhiteboard'), { ssr: false });
 
 type StepScene = {
@@ -80,8 +80,6 @@ export default function Home() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0); // 当前 step 的 index
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
   const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
-  const [zh, setZh] = useState(false);
-
   // 自定义插入模式（点击画布插入）
   const [pendingInsertTool, setPendingInsertTool] = useState<'rectangle' | 'ellipse' | null>(null);
   const rightPaneRef = useRef<HTMLDivElement | null>(null);
@@ -108,7 +106,34 @@ export default function Home() {
   const lastElementsCountRef = useRef(0);
   const [ghostViewport, setGhostViewport] = useState<{ scrollX: number; scrollY: number; zoom: number }>({ scrollX: 0, scrollY: 0, zoom: 1 });
   const [isModeDialogOpen, setIsModeDialogOpen] = useState(false);
+// --- LeetCode风格布局：左右可拖拽分栏 ---
+const [leftPct, setLeftPct] = useState(70);    // 左侧初始占比（百分比）→ 右侧初始约30%
+const [isResizing, setIsResizing] = useState(false);
 
+const containerRef = useRef<HTMLDivElement | null>(null);
+
+useEffect(() => {
+  const handleMove = (e: MouseEvent | PointerEvent) => {
+    if (!isResizing || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const next = Math.max(20, Math.min(80, (x / rect.width) * 100)); // 左侧限制在 20%~80%
+    setLeftPct(next);
+  };
+  const stop = () => setIsResizing(false);
+
+  window.addEventListener('mousemove', handleMove);
+  window.addEventListener('mouseup', stop);
+  // 支持触控的 Pointer 事件
+  window.addEventListener('pointermove', handleMove as any, { passive: false } as any);
+  window.addEventListener('pointerup', stop as any, { passive: true } as any);
+  return () => {
+    window.removeEventListener('mousemove', handleMove);
+    window.removeEventListener('mouseup', stop);
+    window.removeEventListener('pointermove', handleMove as any);
+    window.removeEventListener('pointerup', stop as any);
+  };
+}, [isResizing]);
   useEffect(() => {
     if (!aiGhost || !excalidrawAPI) return;
     let raf = 0;
@@ -133,7 +158,7 @@ export default function Home() {
   // 画布插入预览（ghost）
   const [insertGhost, setInsertGhost] = useState<{ x: number; y: number; zoom: number } | null>(null);
   // 素材库固定标题
-  const libraryCaptions = ['代码','手写','打字','公式','任意图形','箭头连线','矩阵','图','树','栈','数组','链表'];
+  const libraryCaptions = ['代码','打字','手写','公式','任意图形','箭头连线','矩阵','图','树','栈','数组','链表'];
 
   // 当前选中的组
   const [currentGroup, setCurrentGroup] = useState(1);
@@ -148,6 +173,22 @@ export default function Home() {
   const modeWindowRef = useRef<HTMLDivElement | null>(null);
   const [modeWindowSize, setModeWindowSize] = useState({ width: 220, height: 120 });
   const [isModeCardCollapsed, setIsModeCardCollapsed] = useState(true);
+  const [zh, setZh] = useState(true);
+
+  // 左侧描述面板折叠状态
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  // 侧边栏展开状态
+  const [isProblemExpanded, setIsProblemExpanded] = useState(true);
+  const [isAlgorithmExpanded, setIsAlgorithmExpanded] = useState(true);
+  // 右侧上栏：问题 / 直觉 / 算法 切换
+  const [rightTopTab, setRightTopTab] = useState<'problem' | 'intuition' | 'algorithm'>('problem');
+  // 右侧上下分栏比例与拖拽
+  const [topPct, setTopPct] = useState(60);      // 右侧上栏60%，下栏40%
+  const [isTopResizing, setIsTopResizing] = useState(false);
+  const rightSplitRef = useRef<HTMLDivElement | null>(null);
+  // 顶部操作按钮 loading 状态
+  const [topLoadingCheck, setTopLoadingCheck] = useState(false);
+  const [topLoadingHint, setTopLoadingHint] = useState(false);
 
   // 为每个模式维护独立的画布状态
   const [exploreModeCanvas, setExploreModeCanvas] = useState<StepScene>({
@@ -168,34 +209,337 @@ export default function Home() {
   
   // 添加模式切换状态，防止在切换过程中保存
   const isModeSwitching = useRef(false);
-  // 故事模式算法选择：greed（贪心算法）
-  const [storyAlgorithm, setStoryAlgorithm] = useState<'greed'>('greed');
+  // 故事模式算法选择：固定使用贪心方法（greed）
+  const [storyAlgorithm, setStoryAlgorithm] = useState<'algo1' | 'iter' | 'greed'>('greed');
+
+  // AI 结果（左侧底栏显示）
+  const displayNote = stepNotes[currentStepIndex] ?? notes;
+  const checkMsg = stepChecks[currentStepIndex]?.message || '';
+  const errorRegex = /AI\s*服务\s*暂时|网络.*不可用|稍后再试|错误|失败|network|timeout|unavailable|service\s*error|try\s*again/i;
+  const isErrorNote = (!!displayNote && errorRegex.test(displayNote)) || (!!checkMsg && errorRegex.test(checkMsg));
+  // 左栏底部 AI 面板高度与拖拽
+  const [leftAiHeight, setLeftAiHeight] = useState(140);
+  const [isLeftAiResizing, setIsLeftAiResizing] = useState(false);
+  const leftColumnRef = useRef<HTMLDivElement | null>(null);
+
+  // 顶部提交（Submit）与调试/提示（Debug/Hint）按钮事件
+  const handleTopCheck = async () => {
+    try {
+      setTopLoadingCheck(true);
+      await onCheck();
+    } finally {
+      setTopLoadingCheck(false);
+    }
+  };
+  const handleTopHint = async () => {
+    try {
+      setTopLoadingHint(true);
+      await onNextDraw();
+    } finally {
+      setTopLoadingHint(false);
+    }
+  };
+
+  // 右侧上下分栏拖拽监听（在相关 state 声明之后注册，避免引用提升错误）
+  useEffect(() => {
+    const onMove = (e: MouseEvent | PointerEvent) => {
+      if (!isTopResizing || !rightSplitRef.current) return;
+      const rect = rightSplitRef.current.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const next = Math.max(20, Math.min(80, (y / rect.height) * 100)); // 顶部限制在 20%~80%
+      setTopPct(next);
+    };
+    const onUp = () => setIsTopResizing(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    // Pointer 事件支持
+    window.addEventListener('pointermove', onMove as any, { passive: false } as any);
+    window.addEventListener('pointerup', onUp as any, { passive: true } as any);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove as any);
+      window.removeEventListener('pointerup', onUp as any);
+    };
+  }, [isTopResizing]);
+
+  // 左栏底部 AI 面板拖拽监听
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isLeftAiResizing || !leftColumnRef.current) return;
+      const rect = leftColumnRef.current.getBoundingClientRect();
+      // 以鼠标到左列底部的距离作为高度
+      const newHeight = Math.round(rect.bottom - e.clientY);
+      const clamped = Math.max(80, Math.min(400, newHeight));
+      setLeftAiHeight(clamped);
+    };
+    const onUp = () => setIsLeftAiResizing(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isLeftAiResizing]);
   
-  const titles_greed = [
-    '贪心选择',
-    '局部最优',
+  // const titles_iter = [
+  //   // '初始化指针',
+  //   '第一次比较并接入',
+  //   '移动 prev，更新指针，再次比较，继续接入',
+  //   '循环推进：直到有一条用完',
+  //   '连接剩余部分，🎉 全部完成！',
+  // ];
+  // const hints_iter = [
+  //   "创建一个虚拟头结点 prehead（值可写 -1，仅作占位），让 prev 指向它；\n设置 l1 指向 list1 头、l2 指向 list2 头。\n现在：l1=1，l2=1。\n比较 l1 与 l2（节点相等时选择list1的节点）, 应该接入哪个到prehead节点之后?\n 用橘色箭头从prehead节点指向你选择的节点。",
+  //   "把 prev 向前移动到刚接入的1，并将 l1 指向下一个（此时 l1=2）。再次比较：l1=2，l2=1。\n这次应像prev节点接入哪个节点，用橘色箭头标出",
+  //   "继续循环接入节点，在每次接入后，prev 与对应指针同步前移。\n一直到l1=null或者l2=null停下",
+  //   "当某一条链表指针变为 null，\n将另一条未用完的链表整体接到 prev 所指向节点的后面。完成！返回 prehead.next。\n点击检查是否得到有序链，且所有原节点都被包含。",
+  // ];
+  
+  // const steps = useMemo(() => {
+  //   if (storyAlgorithm === 'iter') {
+  //     return hints_iter.map((h) => ({ stepText: h }));
+  //   }
+  //   return [
+  //     { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
+  //     { stepText: "将合并链表 merged 的第一个节点画为刚刚选择的节点，随后从 list2 中移除（用 ❌ 表示已移除）。" },
+  //     // { stepText: "比较新的头节点：list1 是 1，list2 是 3。\n哪一个应该接下来加入合并后的链表？\n用绿色圆圈🟢标记出你选择的节点。" },
+  //     // { stepText: "将 list1 中的 1 添加到合并后的链表中。\n更新 list1，用红色打叉❌标记移除这个节点，然后继续。" },
+  //     { stepText: "连续做3次，自己试着完成！现在链表list1: 1->2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接3个节点"},
+  //         { stepText: "继续！合并下一个节点。\n在4和4之间选择后，画出更新后的链表。" },
+  //     { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
+  //   ] as { stepText: string }[];
+  // }, [storyAlgorithm]);
+// ✅ 新增：迭代版中英文标题/提示
+const titles_iter_ZH = [
+  '第一次比较并接入',
+  '移动 prev，更新指针，再次比较，继续接入',
+  '循环推进：直到有一条用完',
+  '连接剩余部分，🎉 全部完成！',
+];
+const titles_iter_EN = [
+  'First compare & attach',
+  'Move prev, update pointers, compare again',
+  'Keep looping until one list ends',
+  'Attach the remainder — done! 🎉',
+];
+
+const hints_iter_ZH = [
+  "创建一个虚拟头结点 prehead（值可写 -1，仅作占位），让 prev 指向它；\n设置 l1 指向 list1 头、l2 指向 list2 头。\n现在：l1=1，l2=1。\n比较 l1 与 l2（节点相等时选择 list1 的节点），应该接入哪个到 prehead 节点之后？\n用橘色箭头从 prehead 节点指向你选择的节点。",
+  "把 prev 向前移动到刚接入的 1，并将 l1 指向下一个（此时 l1=2）。再次比较：l1=2，l2=1。\n这次应向 prev 节点接入哪个节点，用橘色箭头标出。",
+  "继续循环接入节点，在每次接入后，prev 与对应指针同步前移。\n一直到 l1=null 或者 l2=null 停下。",
+  "当某一条链表指针变为 null，\n将另一条未用完的链表整体接到 prev 所指向节点的后面。完成！返回 prehead.next。\n点击检查是否得到有序链，且所有原节点都被包含。",
+];
+const hints_iter_EN = [
+  "Create a dummy head `prehead` (e.g., value -1 as a placeholder) and set `prev` to it.\nLet `l1` point to list1 head and `l2` to list2 head.\nNow: l1=1, l2=1.\nCompare l1 and l2 (when equal, choose the node from list1). Which one should be attached after `prehead`?\nUse an orange arrow from `prehead` to the chosen node.",
+  "Move `prev` to the just-attached 1, and advance `l1` (now l1=2). Compare again: l1=2, l2=1.\nWhich node should be attached to `prev` this time? Mark with an orange arrow.",
+  "Keep attaching the smaller node each time; after attaching, move `prev` and the corresponding pointer forward.\nStop when either `l1` or `l2` becomes null.",
+  "When one list becomes null,\nattach the remaining list to `prev.next`. Done! Return `prehead.next`.\nClick Check to verify the result is sorted and includes all original nodes.",
+];
+const titles_iter = zh ? titles_iter_ZH : titles_iter_EN;
+const hints_iter = zh ? hints_iter_ZH : hints_iter_EN;
+
+// ✅ 贪心算法步骤定义
+  const titles_greed_ZH = [
+    '初始化指针',
+    '起步，确定边界',
+    '更新边界',
     '继续贪心',
-    '完成合并',
+    '最后一步，完成 🎉 ',
   ];
-  const hints_greed = [
-    "贪心算法：每次选择当前最小的节点。\n比较 list1 和 list2 的头节点，选择较小的一个。\n用绿色圆圈🟢标记出你选择的节点。",
-    "继续贪心策略：在剩余的节点中选择最小的。\n标记已选择的节点，继续比较下一个。",
-    "重复贪心选择：每次都在当前可用的节点中选择最小的。\n保持贪心的局部最优性质。",
-    "完成！检查是否得到了有序的合并链表。\n贪心算法保证了每一步都是局部最优的选择。",
+  const hints_greed_ZH = [
+    "把数组画成一排方格，下标标记在下方。\n你最初位于数组第一个下标，把当前指针 i 指向 0。\n此时可到达区间 🟩 为 [0]，最远可达边界 🚩farthest = 0。",
+    "请你计算下一步最远可以到达哪里: i + nums[i] = _ 。\n更新可达区间🟩和最远可达边界 🚩 farthest = _ ",
+    "继续 i=1，计算下一步最远可到达位置 i + num[i]，更新区间 🟩 和最远可达边界🚩，若值一样则不变。",
+    "继续 i 往前移，计算可走步骤，更新最远可达边界🚩和区间🟩 。\n连续推两步，画到i=3 。",
+    "现在让i=4，i 在🟩外且超过🚩，说明 i=4 不可达，出现断路，在该格记❌结束。",
+  ];
+  const hints_greed_EN = [
+    "Draw the array as a row of squares, with indices marked below. Initialize the farthest reachable boundary 🚩 farthest=0, mark the reachable interval [0] as 🟩, and place the current pointer i at 0",
+    "Calculate the farthest reachable position: i + nums[i] = _ .\nUpdate the reachable interval 🟩  and farthest reachable boundary 🚩 farthest = _ ",
+    "Continue i=1, calculate the farthest reachable position: i + num[i], update the interval 🟩  and farthest reachable boundary 🚩, if the value is the same, keep it.",
+    "Continue i forward, calculate the reachable steps, update the farthest reachable boundary 🚩 and interval 🟩. Draw up to i=3.",
+    "Now let i=4, i is outside 🟩  and beyond 🚩, indicating that i=4 is unreachable, causing a break, mark with ❌ at this position.",
+  ];
+// const titles_greed_ZH = [
+//   '初始化贪心策略',
+//   '选择当前最优解',
+//   '更新状态和约束',
+//   '重复直到完成',
+//   '验证最终结果'
+// ];
+
+  const titles_greed_EN = [
+    'Start, determine boundaries',
+    'Update boundaries',
+    'Continue greedily',
+    'Done',
   ];
 
-  // const steps = useMemo(() => {
-  //   return hints_greed.map((h) => ({ stepText: h }));
-  // }, []);
-// ... existing code ...
-const steps = hints_greed.map((h) => ({ stepText: h }));
-// ... existing code ...
+
+// const hints_greed_ZH = [
+//   "让我们开始贪心算法！\n首先，我们需要确定贪心策略：在每一步都选择当前看起来最优的选择。\n请画出初始状态，并标记出可选择的选项。",
+//   "根据贪心策略，选择当前最优的选项。\n用绿色圆圈🟢标记出你选择的选项，并解释为什么这是当前最优的选择。",
+//   "更新状态：将选择的选项加入解集，更新剩余的可选项和约束条件。\n用箭头显示状态的变化。",
+//   "继续贪心选择：重复上述过程，直到满足终止条件。\n画出每一步的选择过程。",
+//   "验证最终结果：检查是否得到了全局最优解。\n总结贪心算法的执行过程和结果。"
+// ];
+
+
+
+const titles_greed = zh ? titles_greed_ZH : titles_greed_EN;
+const hints_greed = zh ? hints_greed_ZH : hints_greed_EN;
+
+// 根据算法选择步骤
+const steps = useMemo(() => {
+  // 贪心算法步骤
+  if (storyAlgorithm === 'greed') {
+    return hints_greed.map(hint => ({ stepText: hint }));
+  }
+  // 迭代算法步骤
+  else if (storyAlgorithm === 'iter') {
+    return hints_iter.map(hint => ({ stepText: hint }));
+  }
+  // 递归方法步骤（algo1）——做双语
+  else {
+  if (zh) {
+    return [
+      { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
+      { stepText: "将合并链表 merged 的第一个节点画为刚刚选择的节点，随后从 list2 中移除（用 ❌ 表示已移除）。" },
+      { stepText: "连续做3次，自己试着完成！现在链表 list1: 1->2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接 3 个节点" },
+      { stepText: "继续！合并下一个节点。\n在 4 和 4 之间选择后，画出更新后的链表。" },
+      { stepText: "干得漂亮！\n让我们连接最后一个节点，完成合并后的链表。\n检查你的绘图，确保所有节点都已包含且顺序正确。" },
+    ];
+  } else {
+    return [
+      { stepText: "Let's start! We have two lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nLook at the heads (both are 1).\nWhich one should we add first?\nMark your choice with a green circle 🟢." },
+      { stepText: "Draw the first node of the merged list as the one you just chose, then remove it from the original list (mark with ❌)." },
+      { stepText: "Do it three more times by yourself! Now lists are: list1: 1->2->4, list2: 3->4\nRule: 🟢 pick the smaller node → attach to merged list → ❌ delete from the original list\nFinish attaching 3 new nodes." },
+      { stepText: "Keep going! Merge the next node.\nBetween 4 and 4, choose one and draw the updated lists." },
+      { stepText: "Great! Connect the final node to finish the merged list.\nDouble-check that all nodes are included and the order is correct." },
+    ];
+  }
+  }
+}, [zh, storyAlgorithm]);
+// 1. 文案字典
+const ZH = {
+  toolbar_mode: "模式",
+  toolbar_move: "移动",
+  toolbar_select: "选择",
+  toolbar_rect: "矩形",
+  toolbar_ellipse: "椭圆",
+  toolbar_arrow: "箭头",
+  toolbar_line: "连线",
+  toolbar_draw: "自由绘制",
+  toolbar_text: "文字",
+  toolbar_eraser: "橡皮擦",
+  toolbar_library: "素材库",
+
+  greedy_title: "贪心算法",
+  btn_animation: "动画",
+  // 你用到的其它 key 也都放进来…
+};
+
+const EN = {
+  toolbar_mode: "Mode",
+  toolbar_move: "Pan",
+  toolbar_select: "Select",
+  toolbar_rect: "Rectangle",
+  toolbar_ellipse: "Ellipse",
+  toolbar_arrow: "Arrow",
+  toolbar_line: "Line",
+  toolbar_draw: "Free draw",
+  toolbar_text: "Text",
+  toolbar_eraser: "Eraser",
+  toolbar_library: "Library",
+
+  greedy_title: "Greedy Algorithm",
+  btn_animation: "Animation",
+  // 同步英文字段…
+};
+
+// 2. 根据 zh 选择一份
+const t = useMemo(() => (zh ? ZH : EN), [zh]);
+
+
   // 根据算法重置故事模式的所有步骤与画布；第0步采用不同初始文件
-  const resetStoryForAlgorithm = async (alg: 'greed') => {
+  // const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter') => {
+  //   if (!excalidrawAPI) return;
+  //   try {
+  //     const initFile = alg === 'iter'
+  //     ? (zh ? '/initial2.excalidraw' : '/initial2e.excalidraw')
+  //     : (zh ? '/initial1.excalidraw' : '/initial1e.excalidraw');
+  //     let initialStep0: StepScene = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+  //     try {
+  //       const resp = await fetch(initFile);
+  //       if (resp.ok) {
+  //         const data = await resp.json();
+  //         initialStep0 = {
+  //           elements: Array.isArray(data?.elements) ? data.elements : [],
+  //           files: data?.files || {},
+  //           appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
+  //         };
+  //       }
+  //     } catch {}
+
+  //     const initialScenes: Record<number, StepScene> = {};
+  //     initialScenes[0] = initialStep0;
+  //     for (let i = 1; i < (alg === 'iter' ? hints_iter.length : steps.length); i++) {
+  //       initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+  //     }
+  //     setScenes(initialScenes);
+
+  //     // 重置步骤索引/状态/提示
+  //     currentStepIndexRef.current = 0;
+  //     setCurrentStepIndex(0);
+  //     // 同步当前步骤文本为所选算法的第0步
+  //     if (alg === 'iter') {
+  //       setCurrentStepText(hints_iter[0] || '');
+  //     } else {
+  //       setCurrentStepText(
+  //         "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。我们应该先添加哪一个？\n取出它绘制到合并后的链表merged中。\n然后从 list2 中将这个节点用橡皮擦擦除。"
+  //       );
+  //     }
+  //     setStepStatuses(Array(Object.keys(initialScenes).length).fill('pending'));
+  //     setStepNotes({});
+  //     setStepChecks({});
+  //     setNotes('');
+  //     setIsNotesOpen(false);
+
+  //     // 显示第0步
+  //     const scene0 = initialScenes[0];
+  //     excalidrawAPI.updateScene({
+  //       elements: Array.from(scene0.elements) as any[],
+  //       appState: scene0.appState,
+  //       captureUpdate: 2 as any,
+  //     });
+  //   } catch (e) {
+  //     console.warn('重置故事模式失败', e);
+  //   }
+  // };
+  // 把 zh 作为参数（或直接用外层 state 也行）
+const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter' | 'greed', zh: boolean) => {
     if (!excalidrawAPI) return;
     try {
-      const initFile = '/initial1.excalidraw'; // 使用默认初始文件
-      let initialStep0: StepScene = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+    // 根据算法类型选择初始文件
+    let initFile: string;
+    if (alg === 'greed') {
+      initFile = zh ? '/initial3_0.excalidraw' : '/initial3e.excalidraw'; // 贪心算法初始文件
+    } else if (alg === 'iter') {
+      initFile = zh ? '/initial2.excalidraw' : '/initial2e.excalidraw'; // 迭代算法初始文件
+    } else {
+      initFile = zh ? '/initial1.excalidraw' : '/initial1e.excalidraw'; // 递归算法初始文件
+    }
+
+    // 切换期间先暂停自动保存，避免被旧场景覆盖
+    isModeSwitching.current = true;
+
+    let initialStep0: StepScene = {
+      elements: [],
+      files: {},
+      appState: { viewBackgroundColor: '#fff' },
+    };
+
       try {
         const resp = await fetch(initFile);
         if (resp.ok) {
@@ -205,40 +549,72 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
             files: data?.files || {},
             appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
           };
+      } else {
+        console.warn('fetch init file failed:', initFile, resp.status);
         }
-      } catch {}
+    } catch (e) {
+      console.warn(`Failed to fetch init file: ${initFile}`, e);
+    }
 
+    // 重置步骤场景（第0步用初始文件，其它步清空）
+    const stepsCount = steps.length; // 你已有的 steps
       const initialScenes: Record<number, StepScene> = {};
       initialScenes[0] = initialStep0;
-      for (let i = 1; i < hints_greed.length; i++) {
+    for (let i = 1; i < stepsCount; i++) {
         initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
       }
       setScenes(initialScenes);
 
-      // 重置步骤索引/状态/提示
+    // 回到第0步并显示
       currentStepIndexRef.current = 0;
       setCurrentStepIndex(0);
-      // 同步当前步骤文本为所选算法的第0步
-      setCurrentStepText(hints_greed[0] || '');
-      setStepStatuses(Array(Object.keys(initialScenes).length).fill('pending'));
+    setCurrentStepText(steps[0]?.stepText || '');
+    setStepStatuses(Array(stepsCount).fill('pending'));
       setStepNotes({});
       setStepChecks({});
       setNotes('');
       setIsNotesOpen(false);
 
-      // 显示第0步
-      const scene0 = initialScenes[0];
+    // 立即刷新到画布
       excalidrawAPI.updateScene({
-        elements: Array.from(scene0.elements) as any[],
-        appState: scene0.appState,
+      elements: Array.from(initialStep0.elements) as any[],
+      appState: initialStep0.appState,
         captureUpdate: 2 as any,
-      });
-    } catch (e) {
-      console.warn('重置故事模式失败', e);
-    }
-  };
+      collaborators: new Map(),
+    });
+  } finally {
+    // 切换完再恢复自动保存
+    isModeSwitching.current = false;
+  }
+};
+// 当语言 zh 变化时，若当前在 story 模式，就重置当前算法的初始画布
+useEffect(() => {
+  if (!excalidrawAPI) return;
+  if (mode !== 'story') return;          // 只在故事模式刷新初始画布
+  resetStoryForAlgorithm('greed', zh);   // 固定使用贪心方法
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [zh]);
 
-  const [stepStatuses, setStepStatuses] = useState<string[]>(Array(steps.length).fill("pending"));
+  // const steps = useMemo(
+  // () => [
+  //   { stepText: "让我们开始吧！请绘制一个节点表示 \( F(5) \)。" },
+  //   { stepText: "现在你已经绘制了 \( F(5) \)，接下来应该考虑什么？\( F(5) \) 依赖于哪两个子问题？" },
+  //   { stepText: "你已经找到了 \( F(5) \) 的两个子问题，接下来应该怎么做？\( F(4) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(4) \)，接下来呢？\( F(3) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(3) \)，接下来呢？\( F(2) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(2) \)，接下来呢？\( F(3) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了 \( F(3) \)，接下来呢？\( F(2) \) 的子问题是什么？" },
+  //   { stepText: "你已经分解了所有子问题，现在应该考虑什么？哪些节点是基本情况？" },
+  //   { stepText: "你已经标记了基本情况，接下来应该怎么做？如何从基本情况开始回溯？" },
+  //   { stepText: "你已经开始回溯了，接下来呢？如何逐步计算每个节点的值？" },
+  //   { stepText: "你已经完成了递归树的构建和计算，现在应该做什么？检查你的递归树，确保所有节点的值都已正确计算。" }
+  //       ] as { stepText: string }[],
+  //     []
+  // );
+  const [stepStatuses, setStepStatuses] = useState<string[]>(() => {
+    const statuses = Array(steps.length).fill("correct"); // 所有步骤默认为正确状态（绿色）
+    return statuses;
+  });
 
   // 用 index->scene 的 map 存每步画布
   const [scenes, setScenes] = useState<Record<number, StepScene>>({});
@@ -265,6 +641,76 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
       });
   }, [excalidrawAPI]);
 
+  // 初始 step：加载所有步骤文件（initial3_0 到 initial3_4）
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    console.log(`🚀 初始化画布和场景（加载所有步骤文件 ${zh ? 'initial3_0' : 'initial3e_0'} 到 ${zh ? 'initial3_4' : 'initial3e_4'}）`);
+    (async () => {
+      const stepsCount = steps.length;
+      const initialScenes: Record<number, StepScene> = {};
+      
+      // 并行加载所有步骤文件
+      const loadPromises = [];
+      for (let i = 0; i < stepsCount; i++) {
+        const fileName = zh ? `initial3_${i}.excalidraw` : `initial3e_${i}.excalidraw`;
+        loadPromises.push(
+          fetch(`/${fileName}`)
+            .then(async (resp) => {
+              if (resp.ok) {
+                const data = await resp.json();
+                const elements = Array.isArray(data?.elements) ? data.elements : [];
+                const files = data?.files || {};
+                const appState = { viewBackgroundColor: '#fff', ...(data?.appState || {}) };
+                return { index: i, scene: { elements, files, appState } };
+              } else {
+                console.warn(`⚠️ 载入 ${fileName} 失败:`, resp.status);
+                return { index: i, scene: { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } } };
+              }
+            })
+            .catch((e) => {
+              console.warn(`⚠️ 载入 ${fileName} 异常:`, e);
+              return { index: i, scene: { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } } };
+            })
+        );
+      }
+      
+      try {
+        const results = await Promise.all(loadPromises);
+        results.forEach(({ index, scene }) => {
+          initialScenes[index] = scene;
+          const fileName = zh ? `initial3_${index}.excalidraw` : `initial3e_${index}.excalidraw`;
+          console.log(`✅ 步骤 ${index} 使用 ${fileName} 初始化，元素数:`, scene.elements.length);
+        });
+      } catch (e) {
+        console.warn('⚠️ 加载步骤文件时发生错误:', e);
+      }
+
+    setScenes(initialScenes);
+      console.log(`✅ 初始化了 ${steps.length} 个步骤，所有步骤都载入了对应文件`);
+    
+      // 显示第0步
+      const scene0 = initialScenes[0];
+      excalidrawAPI.updateScene({
+        elements: Array.from(scene0.elements) as any[],
+        appState: scene0.appState,
+      captureUpdate: 2 as any,
+    });
+      console.log('✅ 显示第0步画布');
+    
+    // 确保探索模式有独立的初始状态
+    if (exploreModeCanvas.elements.length === 0) {
+        setExploreModeCanvas({ elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } });
+      console.log('✅ 初始化探索模式画布完成');
+    }
+    
+    currentStepIndexRef.current = 0;
+    console.log('📍 设置当前步骤索引为 0');
+    if (steps.length > 0) {
+      setCurrentStepText(steps[0].stepText);
+      console.log('📝 设置初始步骤文本:', steps[0].stepText.substring(0, 50) + '...');
+    }
+    })();
+  }, [excalidrawAPI]); // eslint-disable-line
 
   // 自动保存场景的定时器
   useEffect(() => {
@@ -864,11 +1310,11 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
       }
     }
 
-    // 如果切到第0步但当前为空，做一次懒加载 initial1.excalidraw 作为兜底
+    // 如果切到第0步但当前为空，做一次懒加载 initial3.excalidraw 作为兜底
     if (nextIndex === 0 && (!targetScene.elements || targetScene.elements.length === 0)) {
       (async () => {
         try {
-          const resp = await fetch('/initial1.excalidraw');
+          const resp = await fetch('/initial3.excalidraw');
           if (resp.ok) {
             const data = await resp.json();
             const elements = Array.isArray(data?.elements) ? data.elements : [];
@@ -883,7 +1329,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               collaborators: new Map(),
               captureUpdate: 2 as any,
             });
-            console.log('🔁 兜底载入 initial1.excalidraw 并显示到第0步');
+            console.log('🔁 兜底载入 initial3.excalidraw 并显示到第0步');
           }
         } catch {}
       })();
@@ -940,6 +1386,8 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
 
   // 示例按钮：Check = 验证当前 step
   const onCheck = async (stepIndex?: number) => {
+    console.log('🚀 onCheck 函数被调用:', { stepIndex, currentStepIndex, mode });
+    
     // 使用传入的步骤索引，如果没有传入则使用当前的
     const targetStepIndex = stepIndex !== undefined ? stepIndex : currentStepIndex;
     // 场景已经自动保存，这里只需要验证
@@ -1092,7 +1540,9 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
     const idx = targetStepIndex;
     const hasPreviousStep = idx > 0;
     const previousStepText = hasPreviousStep
-      ? (steps[idx - 1]?.stepText || '')
+      ? (storyAlgorithm === 'iter'
+          ? (hints_iter[idx - 1] || '')
+          : (steps[idx - 1]?.stepText || ''))
       : '';
 
     // 调试信息
@@ -1101,13 +1551,16 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
       targetStepIndex: idx,
       storyAlgorithm,
       hasPreviousStep,
+      hints_iter_length: hints_iter.length,
       steps_length: steps.length,
       previousStepIndex: idx - 1,
+      hints_iter_previous: hints_iter[idx - 1],
       steps_previous: steps[idx - 1]?.stepText,
       previousStepText,
       // 添加更多调试信息
       currentStepText_preview: currentStepText?.substring(0, 50),
-      steps_array: steps.map((s, i) => ({ index: i, text: s.stepText?.substring(0, 30) }))
+      steps_array: steps.map((s, i) => ({ index: i, text: s.stepText?.substring(0, 30) })),
+      hints_iter_array: hints_iter.map((h, i) => ({ index: i, text: h?.substring(0, 30) }))
     });
 
     // console.log('Image base64:', base64); // 打印保存的图片路径
@@ -1262,7 +1715,104 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
   }
   
 };
+// const selectedText = `
+//   # 斐波那契数列
 
+//   ## 问题描述
+
+//   斐波那契数列是一个经典的数列，其中每个数字是前两个数字的和。给定一个整数 \( n \)，计算斐波那契数列的第 \( n \) 项 \( F(n) \)。
+
+//   斐波那契数列的定义如下：
+//   \[ F(0) = 0, F(1) = 1 \]
+//   \[ F(n) = F(n - 1) + F(n - 2), \text{对于 } n > 1 \]
+
+//   例如：
+//   \`\`\`
+//   输入：n = 5
+//   输出：5
+//   \`\`\`
+
+//   ---
+
+//   <details>
+//   <summary>✅ 方法 1：递归</summary>
+
+//   ### 直觉
+
+//   使用递归方法可以直观地实现斐波那契数列的计算。递归的核心思想是将问题分解为更小的子问题，直到达到基本情况。对于斐波那契数列，递归公式为：
+//   \[ F(n) = F(n - 1) + F(n - 2) \]
+//   基本情况为：
+//   \[ F(0) = 0 \]
+//   \[ F(1) = 1 \]
+
+//   ### 算法
+
+//   1. 如果 \( n \) 为 0 或 1，直接返回 \( n \)。
+//   2. 否则，递归调用 \( F(n - 1) \) 和 \( F(n - 2) \)，并将结果相加。
+//   3. 返回最终结果。
+
+//   递归算法的实现如下：
+//   \`\`\`python
+//   def fibonacci(n):
+//       if n == 0:
+//           return 0
+//       elif n == 1:
+//           return 1
+//       else:
+//           return fibonacci(n - 1) + fibonacci(n - 2)
+//   \`\`\`
+
+//   </details>
+
+//   ---
+
+//   <details>
+//   <summary>✅ 方法 2：动态规划</summary>
+
+//   ### 直觉
+
+//   动态规划方法可以避免递归中的重复计算，从而提高效率。通过从底向上计算斐波那契数列的每一项，我们可以存储中间结果，避免重复计算。
+
+//   ### 算法
+
+//   1. 初始化一个数组 \`dp\`，其中 \`dp[i]\` 表示第 \( i \) 项的值。
+//   2. 设置基本情况：\`dp[0] = 0\` 和 \`dp[1] = 1\`。
+//   3. 从 2 到 \( n \) 遍历，计算每一项的值：\`dp[i] = dp[i - 1] + dp[i - 2]\`。
+//   4. 返回 \`dp[n]\`。
+
+//   动态规划算法的实现如下：
+//   \`\`\`python
+//   def fibonacci(n):
+//       if n == 0:
+//           return 0
+//       elif n == 1:
+//           return 1
+//       dp = [0] * (n + 1)
+//       dp[0] = 0
+//       dp[1] = 1
+//       for i in range(2, n + 1):
+//           dp[i] = dp[i - 1] + dp[i - 2]
+//       return dp[n]
+//   \`\`\`
+
+//   </details>
+// `;
+
+// console.log(selectedText);
+
+
+
+
+
+  
+  
+
+
+ 
+ 
+
+
+  
   const handleNotesClose = () => {
       setIsNotesOpen(false);
     };
@@ -1453,7 +2003,42 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
       console.log('mapped(scene est.) sample<=10', mapped);
     } catch {}
     console.groupEnd();
-
+    // const data = {
+    //   "elements": [
+    //     {
+    //       "type": "text",
+    //       "text": "Merged",
+    //       "x_norm": 0.0284,
+    //       "y_norm": 0.7234,
+    //       "style": {
+    //         "strokeColor": "#ff0000"
+    //       }
+    //     },
+    //     {
+    //       "type": "arrow",
+    //       "x_norm": 0.17,
+    //       "y_norm": 0.7234,
+    //       "end_x_norm": 0.1875,
+    //       "end_y_norm": 0.7234,
+    //       "style": {
+    //         "strokeColor": "#ff0000",
+    //         "endArrowhead": "arrow"
+    //       }
+    //     },
+    //     {
+    //       "type": "rectangle",
+    //       "x_norm": 0.4261,
+    //       "y_norm": 0.8596,
+    //       "w_norm": 0.1591,
+    //       "h_norm": 0.0085,
+    //       "style": {
+    //         "strokeColor": "#ff0000",
+    //         "fillColor": "#ff0000"
+    //       }
+    //     }
+    //   ],
+    //   "notes": "Compared heads (1 from list1, 1 from list2). As per instruction, took 1 from list2. 'Merged' pointer now points to list2's node '1'. List2's head pointer (underline) advances to node '3'."
+    // }
     let parsed;
     try {
       console.log('payload:', data.payload);
@@ -1462,6 +2047,20 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
     //   height: frameH,
     // },{x: frameX0, 
     //   y: frameY0,});
+        // 调试坐标系统
+        console.log('🔍 AI绘制坐标调试:', {
+          frameW, frameH, frameX0, frameY0,
+          payloadElements: data.payload?.elements?.length || 0,
+          firstElement: data.payload?.elements?.[0]
+        });
+        
+        // 验证坐标参数
+        if (!Number.isFinite(frameW) || !Number.isFinite(frameH) || 
+            !Number.isFinite(frameX0) || !Number.isFinite(frameY0)) {
+          console.error('❌ 坐标参数无效:', { frameW, frameH, frameX0, frameY0 });
+          throw new Error('坐标参数无效，无法绘制AI元素');
+        }
+        
         // 直接写入画布元素（嵌入到 Excalidraw 场景）
         await applyGeminiElementsToExcalidraw(
           excalidrawAPI,
@@ -1568,6 +2167,27 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
       const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
       const newEls = convertToExcalidrawElements(skeletons as any);
       excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
+            // 自动选中新创建的元素并打开属性面板
+      // ... existing code ...
+      // 自动选中新创建的元素并打开属性面板
+      if (newEls.length > 0) {
+        const newElementIds = newEls.reduce((acc: any, el: any) => {
+          acc[el.id] = true;
+          return acc;
+        }, {});
+        excalidrawAPI.updateScene({
+          appState: {
+            ...excalidrawAPI.getAppState(),
+            selectedElementIds: newElementIds,
+            // 打开属性面板
+            openMenu: 'shape',
+            // 确保选择工具激活
+            activeTool: { type: 'selection', lastActiveTool: null, locked: false, customType: null },
+          }
+        });
+      }
+// ... existing code ...
+      
       saveCurrentScene();
     } catch (e) {
       console.error('插入固定矩形失败', e);
@@ -1596,6 +2216,23 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
       const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
       const newEls = convertToExcalidrawElements(skeletons as any);
       excalidrawAPI.updateScene({ elements: [...excalidrawAPI.getSceneElements(), ...newEls] });
+      // 自动选中新创建的元素并打开属性面板
+      if (newEls.length > 0) {
+        const newElementIds = newEls.reduce((acc: any, el: any) => {
+          acc[el.id] = true;
+          return acc;
+        }, {});
+        excalidrawAPI.updateScene({
+          appState: {
+            ...excalidrawAPI.getAppState(),
+            selectedElementIds: newElementIds,
+            // 打开属性面板
+            openMenu: 'shape',
+            // 确保选择工具激活
+            activeTool: { type: 'selection', lastActiveTool: null, locked: false, customType: null },
+          }
+        });
+      }
       saveCurrentScene();
     } catch (e) {
       console.error('插入固定椭圆失败', e);
@@ -1700,1304 +2337,2129 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
     
 
     
-  return (
-    <div className="flex h-screen">
-      {/* 左侧导航栏 */}
-      <Box
-        sx={{
-          width: isNavCollapsed ? 0 : 80,
-          bgcolor: 'background.paper',
-          borderRight: isNavCollapsed ? 0 : 1,
-          borderColor: 'divider',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: 2,
-          transition: 'width 0.3s ease, border-right 0.3s ease',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        {/* 收起/展开按钮 */}
-        <IconButton
-          onClick={() => setIsNavCollapsed(!isNavCollapsed)}
-          sx={{
-            position: 'fixed',
-            left: isNavCollapsed ? 8 : 72,
-            top: 20,
-            bgcolor: 'background.paper',
-            border: 1,
-            borderColor: 'divider',
-            boxShadow: 2,
-            zIndex: 1000,
-            width: 32,
-            height: 32,
-            '&:hover': {
-              bgcolor: 'action.hover',
-            },
-          }}
+    return (
+        <main
+          ref={containerRef}
+          className="lc-root"
+          style={{ display: 'flex', width: '100%', minHeight: '100svh', height: 'auto', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
         >
-          {isNavCollapsed ? <NextIcon /> : <NextIcon sx={{ transform: 'rotate(180deg)' }} />}
-        </IconButton>
-      
-                <Box sx={{ flex: 1, p: 1, overflow: 'hidden' }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {/* 演示按钮 */}
-            <Button
-              variant="outlined"
-              fullWidth
-              onClick={() => window.location.href = '/'}
+          {/* 顶部全局操作栏（LeetCode风格居中按钮） */}
+          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, borderBottom: 1, borderColor: 'divider', bgcolor: '#fff', zIndex: 2000 }}>
+            <Box sx={{ position: 'relative', height: '100%' }}>
+              {/* 左侧：项目名 */}
+              <Box sx={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#333' }}>SketchMind</Typography>
+              </Box>
+              {/* 中间操作按钮组 */}
+              {/* <Box sx={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 2, px: 1, py: 0.5, boxShadow: 0 }}>
+                <Button
+                  onClick={handleTopHint}
+                  disabled={topLoadingHint}
+                  sx={{ minWidth: 0, color: '#555', textTransform: 'none', '&:hover': { bgcolor: '#eeeeee' } }}
+                  startIcon={topLoadingHint ? <CircularProgress size={18} /> : <PlayArrow />}
+                >
+                  Hint
+                </Button>
+                <Button
+                  onClick={handleTopCheck}
+                  disabled={topLoadingCheck}
+                  sx={{ minWidth: 0, color: 'success.main', fontWeight: 700, textTransform: 'none', '&:hover': { bgcolor: '#e8f5e9' } }}
+                  startIcon={topLoadingCheck ? <CircularProgress size={18} /> : <CloudUpload sx={{ color: 'success.main' }} />}
+                >
+                  Submit
+                </Button>
+              </Box> */}
+            </Box>
+          </Box>
+    
+          {/* 顶部右侧：语言切换 */}
+          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, pointerEvents: 'none', zIndex: 2001 }}>
+            <Box sx={{ position: 'relative', height: '100%' }}>
+              <Box sx={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 0.75, pointerEvents: 'auto' }}>
+                <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#666' }}>EN</Typography>
+                <Switch
+                  checked={zh}
+                  onChange={(_: any, checked: boolean) => {
+                    if (checked !== zh) setZh(checked);
+                  }}
+                  size="small"
+                  sx={{
+                    '& .MuiSwitch-thumb': { width: 16, height: 16 },
+                    '& .MuiSwitch-track': { height: 12, borderRadius: 6 },
+                  }}
+                />
+                <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#666' }}>中文</Typography>
+              </Box>
+            </Box>
+          </Box>
+    
+          {/* 主体布局容器（顶栏高度占位，可滚动） */}
+          <Box sx={{ display: 'flex', flex: 1, width: '100%', height: 'auto', minHeight: 0, pt: '56px', overflow: 'visible' }}>
+          {/* 问题描述侧拉栏 - 右侧固定标题 */}
+          {false && (
+          <Box
+            sx={{
+              position: 'fixed',
+              right: 0,
+              top: 0,
+              height: '35%',
+              zIndex: 1000,
+              display: 'flex',
+            }}
+          >
+            {/* 问题内容面板 */}
+            <Box
               sx={{
-                py: 1,
-                fontSize: '0.875rem',
-                fontWeight: 'bold',
-                opacity: isNavCollapsed ? 0 : 1,
-                transition: 'opacity 0.3s ease',
+                width: 400,
+                height: '100%',
+                bgcolor: 'white',
+                borderLeft: 1,
+                borderColor: 'divider',
+                boxShadow: 3,
+                display: 'flex',
+                flexDirection: 'column',
+                transform: isProblemExpanded ? 'translateX(0)' : 'translateX(400px)',
+                transition: 'transform 0.3s ease-in-out',
+          
+              }}
+            >
+              {/* 问题内容 */}
+              <Box sx={{ p: 1.5, overflow: 'auto', flex: 1 ,'&::-webkit-scrollbar': { width: '4px' },
+                  '&::-webkit-scrollbar-track': { bgcolor: 'rgba(0,0,0,0.1)' },
+                  '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(165, 175, 76, 0.3)', borderRadius: '2px' },
+    }}>
+                              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#8b7355' }}>
+                  {zh ? '📋 跳跃游戏' : '📋 Jump Game'}
+                  </Typography>
+                
+                  <Typography variant="body2" sx={{ lineHeight: 1.6, mb: 2 }}>
+                {zh ? (
+                  <>
+                    给你一个非负整数数组 nums，你最初位于数组的 <Box component="span" sx={{ fontWeight: 700, color: '#8b7355' }}>第一个下标</Box>。数组中的每个元素代表你在该位置可以跳跃的最大长度。
+                    <br /><br />
+                    判断你是否能够到达最后一个下标，如果可以，返回 true；否则，返回 false。
+                  </>
+                ) : (
+                  <>
+                    You are given a non-negative integer array nums. You are initially positioned at the array's <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>first index</Box>, and each element in the array represents your maximum jump length at that position.
+                    <br /><br />
+                    Return true if you can reach the last index, or false otherwise.
+                  </>
+                )}
+                  </Typography>
+             
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                {zh ? '示例' : 'Example'}
+                  </Typography>
+              <Typography variant="body2" sx={{ 
+                lineHeight: 1.6, 
+                mb: 2,
+                fontFamily: 'monospace',
+                bgcolor: '#f5f5f5',
+                p: 1,
+                borderRadius: 1,
+                border: '1px solid #e0e0e0'
+              }}>
+                {zh ? '输入: [3, 2, 1, 0, 4]' : 'Input: [3, 2, 1, 0, 4]'}
+                    </Typography>
+               
+    
+                   
+                
+    
+               
+              </Box>
+            </Box>
+    
+            {/* 问题标题 - 固定在右侧边缘，带折叠符号 */}
+            <Box
+              sx={{
+                width: 50,
+                height: '100%',
+                bgcolor: '#d4c4a8',
+                color: 'white',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                '&:hover': { bgcolor: '#b8a082' },
+                writingMode: 'vertical-rl',
+                textOrientation: 'mixed',
+                boxShadow: 2,
+                position: 'relative',
+              }}
+              onClick={() => setIsProblemExpanded(!isProblemExpanded)}
+            >
+              {/* 折叠符号 */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconButton 
+                  size="small" 
+                  sx={{ 
+                    color: 'white',
+                    p: 0.5,
+                    minWidth: 20,
+                    minHeight: 20,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsProblemExpanded(!isProblemExpanded);
+                  }}
+                >
+                  {isProblemExpanded ? <ChevronRight fontSize="small" /> : <ChevronLeft fontSize="small" />}
+                </IconButton>
+              </Box>
+              
+              {/* 标题文字 */}
+                          <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontWeight: 600, 
+                    fontSize: '1.2rem',
+                    textAlign: 'center',
+                  }}
+                >
+                  {zh ? '问题描述' : 'Problem'}
+                </Typography>
+            </Box>
+          </Box>
+          )}
+    
+          {/* 算法描述侧拉栏 - 右侧固定标题 */}
+          {false && (
+          <Box
+            sx={{
+              position: 'fixed',
+              right: 0,
+              top: '35%',
+              height: '65%',
+              zIndex: 1002,
+              display: 'flex',
+            }}
+          >
+            {/* 算法内容面板 */}
+            <Box
+              sx={{
+                width: 280,
+                height: '100%',
+                bgcolor: 'white',
+                borderLeft: 1,
+                borderColor: 'divider',
+                boxShadow: 3,
+                display: 'flex',
+                flexDirection: 'column',
+                transform: isAlgorithmExpanded ? 'translateX(0)' : 'translateX(280px)',
+                transition: 'transform 0.3s ease-in-out',
+              }}
+            >
+              {/* 算法内容 */}
+              <Box sx={{ p: 1.5, overflow: 'auto', flex: 1,'&::-webkit-scrollbar': { width: '4px' },
+                  '&::-webkit-scrollbar-track': { bgcolor: 'rgba(0,0,0,0.1)' },
+                  '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(76, 175, 80, 0.3)', borderRadius: '2px' },
+     }}>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#6b7c32' }}>
+                {zh ? '🎯 贪心算法' : '🎯 Greed Algorithm'}
+                </Typography>
+                
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                    {zh ? '直觉' : 'Intuition'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ lineHeight: 1.6, mb: 2 }}>
+                    {zh 
+                  ? '我们可以用贪心的方法解决这个问题。设想一下，对于数组中的任意一个位置 y，我们如何判断它是否可以到达？'
+                  : 'We can solve this problem with a greedy approach. Consider any position y in the array: how can we determine whether it\'s reachable?'
+                    }
+                  </Typography>
+                  
+                
+  
+                
+                <Typography variant="body2" sx={{ lineHeight: 1.2, fontStyle: 'italic' }}>
+                  {zh 
+                    ? (
+                      <>根据题目的描述，只要存在一个位置 x，它本身可以到达，并且它跳跃的最大长度为 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x+nums[x]</Box>，这个值大于等于 y，即 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x+nums[x]≥y</Box>，那么位置 y 也可以到达。</>
+                    ) : (
+                      <>According to the problem, if there exists a position x that is itself reachable and whose maximum jump reaches at least y—that is, if <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x + nums[x] ≥ y</Box>—then y is reachable as well.</>
+                    )
+                    }
+                  </Typography>
+                </Box>
+    
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                    {zh ? '算法' : 'Algorithm'}
+                  </Typography>
+                <Box sx={{ 
+                        bgcolor: 'rgba(76, 175, 80, 0.05)', 
+                        p: 2, 
+                        borderRadius: 2, 
+                        border: '1px solid rgba(76, 175, 80, 0.15)'
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem',
+                          mb: 1.5
+                        }}>
+                          {zh ? (
+                            <>1. 依次遍历数组中的每一个位置，并实时维护 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>最远可以到达的位置</Box></>
+                          ) : (
+                            <>1. Iterate through the array while maintaining the <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>farthest position we can reach</Box></>
+                          )}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem',
+                          mb: 1.5
+                        }}>
+                          {zh ? '2. 对于当前遍历到的位置 x，如果它在最远可以到达的位置的范围内，那么我们就可以从起点通过若干次跳跃到达该位置' : '2. For the current index x, if it lies within the farthest reachable range, then we can get to x from the start with some number of jumps'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem',
+                          mb: 1.5
+                        }}>
+                          {zh ? (
+                            <>3. 用 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x+nums[x]</Box> 更新最远可以到达的位置</>
+                          ) : (
+                            <>3. Update the farthest reach to <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>max(farthest, x + nums[x])</Box></>
+                          )}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem'
+                        }}>
+                          {zh ? '4. 如果最远可以到达的位置 ≥ 数组最后一个位置，返回 True；否则返回 False' : '4. If the farthest reachable position ≥ last index, return True; otherwise return False'}
+                  </Typography>
+                </Box>
+   
+              </Box>
+  
+              
+              </Box>
+            </Box>
+    
+            {/* 算法标题 - 固定在右侧边缘，带折叠符号 */}
+            <Box
+              sx={{
+                width: 50,
+                height: '100%',
+                bgcolor: '#a8b896',
+                color: 'white',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                '&:hover': { bgcolor: '#8fa67b' },
+                writingMode: 'vertical-rl',
+                textOrientation: 'mixed',
+                boxShadow: 2,
+                position: 'relative',
+                
+                zIndex: 1003, // 确保标题栏在最上层
+              }}
+              onClick={() => {
+                console.log('算法标题被点击，当前状态:', isAlgorithmExpanded);
+                setIsAlgorithmExpanded(!isAlgorithmExpanded);
+              }}
+            >
+              {/* 折叠符号 */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconButton 
+                  size="small" 
+                  sx={{ 
+                    color: 'white',
+                    p: 0.5,
+                    minWidth: 20,
+                    minHeight: 20,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log('算法折叠按钮被点击，当前状态:', isAlgorithmExpanded);
+                    setIsAlgorithmExpanded(!isAlgorithmExpanded);
+                  }}
+                >
+                  {isAlgorithmExpanded ? <ChevronRight fontSize="small" /> : <ChevronLeft fontSize="small" />}
+                </IconButton>
+              </Box>
+              
+              {/* 标题文字 */}
+                          <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontWeight: 600, 
+                    fontSize: '1.2rem',
+                    textAlign: 'center',
+                  }}
+                >
+                {zh ? '贪心算法' : 'Greed Algorithm'}
+                </Typography>
+            </Box>
+          </Box>
+          )}
+          {/* 主页面布局 - LeetCode风格左右分栏 */}
+          <div
+            className="lc-left"
+            style={{ width: `${leftPct}%`, minWidth: 0, position: 'relative', height: '100%', display: 'flex' }}
+          >
+          {/* 左侧导航栏 */}
+          <Box
+            sx={{
+              width: isNavCollapsed ? 0 : 80,
+              bgcolor: 'background.paper',
+              borderRight: isNavCollapsed ? 0 : 1,
+              borderColor: 'divider',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 2,
+              transition: 'width 0.3s ease, border-right 0.3s ease',
+              position: 'relative',
+              overflow: 'hidden',
+                zIndex: 1001, // 确保在侧拉栏之上
+            }}
+          >
+            {/* 收起/展开按钮 */}
+            <IconButton
+              onClick={() => setIsNavCollapsed(!isNavCollapsed)}
+              sx={{
+                position: 'fixed',
+                left: isNavCollapsed ? 8 : 72,
+                top: 20,
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                boxShadow: 2,
+                zIndex: 1000,
+                width: 32,
+                height: 32,
                 '&:hover': {
                   bgcolor: 'action.hover',
                 },
               }}
             >
-              演示
-            </Button>
-            
-            {/* <Box
-              sx={{
-                height: 1,
-                bgcolor: 'divider',
-                my: 1,
-                opacity: isNavCollapsed ? 0 : 1,
-                transition: 'opacity 0.3s ease',
-              }}
-            /> */}
-            
-            
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  textAlign: 'center',
-                  py: 1,
-                  px: 1,
-                  fontSize: '0.875rem',
-                  fontWeight: 'normal',
-                  opacity: isNavCollapsed ? 0 : 1,
-                  transition: 'opacity 0.3s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                递归
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/recursive/animation'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}
-                >
-                  动画
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/recursive/drawing'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}
-                >
-                  画图
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/recursive/testing'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  测试
-                </Button>
-              </Box>
-            </Box>
-
-            {/* 组2 */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  textAlign: 'center',
-                  py: 1,
-                  px: 1,
-                  fontSize: '0.875rem',
-                  fontWeight: 'normal',
-                  opacity: isNavCollapsed ? 0 : 1,
-                  transition: 'opacity 0.3s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                迭代
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/iterative/animation'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}
-                >
-                  动画
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/iterative/drawing'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}
-                >
-                  画图 
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/iterative/testing'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  测试
-                </Button>
-              </Box>
-            </Box>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  textAlign: 'center',
-                  py: 1,
-                  px: 1,
-                  fontSize: '0.875rem',
-                  fontWeight: 'normal',
-                  opacity: isNavCollapsed ? 0 : 1,
-                  transition: 'opacity 0.3s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                贪心
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <Button
-                  size="small"
+              {isNavCollapsed ? <NextIcon /> : <NextIcon sx={{ transform: 'rotate(180deg)' }} />}
+            </IconButton>
+          
+                    <Box sx={{ flex: 1, p: 1, overflow: 'hidden' }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {/* 演示按钮 */}
+              {/* <Button
                   variant="contained"
                   fullWidth
                   sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
+                    py: 1,
+                    fontSize: '0.875rem',
+                    fontWeight: 'bold',
                     opacity: isNavCollapsed ? 0 : 1,
                     transition: 'opacity 0.3s ease',
-                    bgcolor: 'primary.main',
+                  }}
+              >
+                演示
+              </Button> */}
+              <Button
+                variant="outlined"
+                fullWidth
+                onClick={() => window.location.href = '/'}
+                sx={{
+                  py: 1,
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  opacity: isNavCollapsed ? 0 : 1,
+                  transition: 'opacity 0.3s ease',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+                >
+                  {zh ? '演示' : 'Warm up'}
+                </Button>
+                
+                {/* <Box
+                  sx={{
+                    height: 1,
+                    bgcolor: 'divider',
+                    my: 1,
+                    opacity: isNavCollapsed ? 0 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                /> */}
+                
+                
+                  {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      textAlign: 'center',
+                      py: 1,
+                      px: 1,
+                      fontSize: '0.875rem',
+                      fontWeight: 'normal',
+                      opacity: isNavCollapsed ? 0 : 1,
+                      transition: 'opacity 0.3s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    递归
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/recursive/animation'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      动画
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/recursive/drawing'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      画图
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/recursive/testing'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      测试
+                    </Button>
+                  </Box>
+                </Box> */}
+    
+                {/* 组2 */}
+                {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      textAlign: 'center',
+                      py: 1,
+                      px: 1,
+                      fontSize: '0.875rem',
+                      fontWeight: 'normal',
+                      opacity: isNavCollapsed ? 0 : 1,
+                      transition: 'opacity 0.3s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    迭代
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/iterative/animation'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      动画
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/iterative/drawing'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      画图 
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/iterative/testing'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      测试
+                    </Button>
+                  </Box>
+                </Box> */}
+    
+      {/* 组2 */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      textAlign: 'center',
+                      py: 1,
+                      px: 1,
+                      fontSize: '0.875rem',
+                      fontWeight: 'normal',
+                      opacity: isNavCollapsed ? 0 : 1,
+                      transition: 'opacity 0.3s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {zh ? '贪心' : 'Greed'}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/greed/animation'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                  bgcolor: '#1976d2',
                     color: 'white',
                     '&:hover': {
-                      bgcolor: 'primary.dark',
-                    },
-                  }}
-                >
-                  动画
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/greed/drawing'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  画图 
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  fullWidth
-                  onClick={() => window.location.href = '/greed/testing'}
-                  sx={{
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1,
-                    minHeight: '20px',
-                    textTransform: 'none',
-                    opacity: isNavCollapsed ? 0 : 1,
-                    transition: 'opacity 0.3s ease',
-                  }}
-                >
-                  测试
-                </Button>
-              </Box>
-            </Box>
-           
-          </Box>
-        </Box>
-      </Box>
-
-      {/* 内容区域 */}
-      <div className="flex-1 flex">
-        {/* 左侧内容 */}
-        <div className="w-2/5 relative bg-gray-100" style={{ overflowY: 'auto', height: '100vh' }}>
-          {/* 翻译开关 */}
-<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: 1, ml: 2 }}>
-  <Typography variant="body2" sx={{ mr: 1, color: '#666' }}>EN</Typography>
-  <Switch checked={zh} onChange={(e) => setZh(e.target.checked)} />
-  <Typography variant="body2" sx={{ ml: 1, color: '#666' }}>中文</Typography>
-</Box>
-
-            <Typography variant="h4" sx={{ mb: 2, color: '#1976d2', fontWeight: 700 }}>
-  {zh ? '贪心算法' : 'Greedy Algorithm'}
-            </Typography>
-            
-            <Typography variant="h6" sx={{ mb: 2, color: '#333', fontWeight: 600 }}>
-  {zh ? '问题描述 - 跳跃游戏' : 'Problem — Jump Game'}
-            </Typography>
-            
-            <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.6, color: '#555' }}>
-  {zh
-    ? <>给你一个非负整数数组 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>nums</code>，
-              你最初位于数组的第一个下标。数组中的每个元素 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>nums[i]</code> 
-        表示在该位置可以跳跃的<strong>最大</strong>长度。</>
-    : <>Given a non-negative integer array <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>nums</code>,
-        you start at index 0. Each element <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>nums[i]</code>
-        represents the <strong>maximum</strong> jump length at that position.</>}
-            </Typography>
-            
-            <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.6, color: '#555' }}>
-  {zh
-    ? <>判断是否能够到达最后一个下标；如果可以，返回 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>true</code>，
-        否则返回 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>false</code>。</>
-    : <>Determine whether you can reach the last index. Return <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>true</code>
-        if you can; otherwise return <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>false</code>.</>}
-            </Typography>
-            
-<Box sx={{ bgcolor: '#f8f9fa', p: 2, borderRadius: 1, border: '1px solid #e9ecef', mb: 3 }}>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#495057' }}>
-    {zh ? '输入：nums = [3, 2, 1, 0, 4]' : 'Input: nums = [3, 2, 1, 0, 4]'}
-              </Typography>
-          </Box>
-
-
-          {/* 算法直觉 */}
-            <Typography variant="h6" sx={{ mb: 2, color: '#333', fontWeight: 600 }}>
-  {zh ? '直觉' : 'Intuition'}
-            </Typography>
-            
-            <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.6, color: '#555' }}>
-  {zh
-    ? <>若某个位置 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>x</code> 可达，
-        则从 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>x</code> 能"覆盖"一段连续区间
-        <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>(x, x + nums[x]]</code>。</>
-    : <>If a position <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>x</code> is reachable,
-        then from <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>x</code> you can "cover" the range
-        <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>(x, x + nums[x]]</code>.</>}
-            </Typography>
-            
-            <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.6, color: '#555' }}>
-  {zh
-    ? <>我们只需在遍历数组时，<strong>维护当前能到达的最远位置 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code></strong>。
-              当下标 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code> 不超过 
-              <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code> 时，
-              <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code> 可达，
-              进而用 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i + nums[i]</code> 去拓展 
-        <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code>。</>
-    : <>While scanning the array, we only need to <strong>maintain the farthest reachable index
-        <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code></strong>.
-        If the current index <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code> ≤
-        <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code>, then <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code>
-        is reachable; use <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i + nums[i]</code> to extend
-        <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code>.</>}
-            </Typography>
-            
-            <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.6, color: '#555' }}>
-  {zh
-    ? <>一旦 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code> 覆盖了最后一个下标，
-        就已经可以返回 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>true</code>。</>
-    : <>Once <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest</code> reaches or passes the last index,
-        we can return <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>true</code>.</>}
-            </Typography>
-
-          {/* 算法步骤 */}
-            <Typography variant="h6" sx={{ mb: 2, color: '#333', fontWeight: 600 }}>
-  {zh ? '算法' : 'Algorithm'}
-            </Typography>
-            
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body1" sx={{ mb: 1, lineHeight: 1.6, color: '#555' }}>
-    {zh
-      ? <>1. 初始化 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest = 0</code>。</>
-      : <>1. Initialize <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest = 0</code>.</>}
-              </Typography>
-            </Box>
-            
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body1" sx={{ mb: 1, lineHeight: 1.6, color: '#555' }}>
-    {zh
-      ? <>2. 线性遍历每个下标 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code>：</>
-      : <>2. Scan indices linearly <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code>:</>}
-              </Typography>
-              <Box sx={{ pl: 2, mt: 1 }}>
-                <Typography variant="body2" sx={{ mb: 0.5, lineHeight: 1.5, color: '#666' }}>
-      {zh
-        ? <>• 若 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i &gt; farthest</code>，
-                  说明 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code> 不可达，
-            返回 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>false</code>。</>
-        : <>• If <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i &gt; farthest</code>, then <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>i</code> is unreachable;
-            return <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>false</code>.</>}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5, lineHeight: 1.5, color: '#666' }}>
-      {zh
-        ? <>• 否则更新 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest = max(farthest, i + nums[i])</code>。</>
-        : <>• Otherwise update <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest = max(farthest, i + nums[i])</code>.</>}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5, lineHeight: 1.5, color: '#666' }}>
-      {zh
-        ? <>• 如果 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest &gt;= n - 1</code>（
-            <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>n</code> 为数组长度），立即返回
-            <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>true</code>。</>
-        : <>• If <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>farthest &gt;= n - 1</code> (
-            <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>n</code> is the length), return
-            <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>true</code> immediately.</>}
-                </Typography>
-              </Box>
-            </Box>
-            
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="body1" sx={{ mb: 1, lineHeight: 1.6, color: '#555' }}>
-    {zh
-      ? <>3. 遍历结束后仍未覆盖末尾，返回 <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>false</code>。</>
-      : <>3. If the loop ends without covering the last index, return
-          <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>false</code>.</>}
-              </Typography>
-          </Box>
-
-
-          {/* 贪心算法动画演示视频 */}
-          <Box sx={{ p: 3, pt: 0 }}>
-            {/* <Typography variant="h6" sx={{ mb: 2, color: '#1976d2', fontWeight: 600 }}>
-              🎥 贪心算法动画演示
-            </Typography> */}
-            <Typography variant="h6" sx={{ mb: 2, color: '#1976d2', fontWeight: 600 }}>
-  {zh ? '🎥 贪心算法动画演示' : '🎥 Greedy Algorithm Animation'}
-            </Typography>
-
-            <Box sx={{ 
-              borderRadius: 1, 
-              overflow: 'hidden', 
-              border: '1px solid #e0e0e0',
-              bgcolor: 'white'
-            }}>
-              <video
-                controls
-                preload="metadata"
-                playsInline
-                muted
-                style={{ width: '100%', height: 'auto', display: 'block' }}
-                poster="/video-poster.jpg"
-                onError={(e) => console.error('Video error:', e)}
-              >
-                <source src="/videos/greed.mp4" type="video/mp4" />
-                <source src="/videos/greed.webm" type="video/webm" />
-                您的浏览器不支持视频播放。
-              </video>
-            </Box>
-            {/* <Typography variant="body2" sx={{ mt: 1, color: '#666', fontSize: '0.875rem' }}>
-              观看贪心算法在跳跃游戏中的实际应用过程
-            </Typography> */}
-            <Typography variant="body2" sx={{ mt: 1, color: '#666', fontSize: '0.875rem' }}>
-  {zh ? '观看贪心算法在跳跃游戏中的实际应用过程' : 'Watch how the greedy strategy works on the Jump Game'}
-            </Typography>
-          </Box>
-        </div>
-
-        {/* 右侧内容 */}
-      <div
-        className="w-3/5 bg-white relative"
-        ref={rightPaneRef}
-        style={{
-          touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
-          overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
-          overflow: 'hidden',            // 避免绘制时容器产生滚动条
-          contain: 'layout paint',       // 限定重绘范围，减少抖动
-        }}
-      >
-      {/* 右栏悬浮按钮组 */}
-        <Box
-          position="absolute"
-          top={19}
-          left={300}            // ✅ 靠左
-          zIndex={10}
-          bgcolor="rgba(255,255,255,0.9)"
-          borderRadius={1}
-          // boxShadow={1}
-          display="flex"
-          gap={1}
-        >
-         
-        </Box>
-
-      
-
-        {/* 遮挡 Excalidraw 左上角菜单按钮的白色遮挡物 */}
-         <Box
-          sx={{
-            position: 'absolute',
-            top: 6,
-            left: 6,
-            width: 64,
-            height: 64,
-            bgcolor: '#fff',
-            borderRadius: 1,
-            zIndex: 20,
-            pointerEvents: 'auto', // 阻止点击到底层按钮
-          }}
-        />
-
-        {/* 遮挡 Excalidraw 右上角的 Library 按钮 */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 6,
-            right: 6,
-            width: 120,
-            height: 64,
-            bgcolor: '#fff',
-            borderRadius: 1,
-            zIndex: 20,
-            pointerEvents: 'auto',
-          }}
-        />
-
-<Box
-            sx={{
-              position: 'absolute',
-              top: 12,
-              left: '60%',
-              transform: 'translateX(-50%)',
-              width: '100%', // 自适应右侧面板宽度
-              maxWidth: '90%', // 限制最大宽度，避免超出面板
-              height: 81,
-              bgcolor: '#fff',
-              borderRadius: 1,
-              zIndex: 25,
-              pointerEvents: 'none',
-              // boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            }}
-          />
-        
-   
-
-        {/* 自定义简化工具栏（顶部居中，横向排列） */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 12,
-            left: '60%',
-            transform: 'translateX(-50%)',
-            zIndex: 30,
-            bgcolor: 'rgba(255,255,255,1)',
-            borderRadius: 1,
-            p: 0.5,
-            display: 'flex',
-            flexDirection: 'row',
-            gap: 1.25,
-            width: 'auto', // 自适应内容宽度
-            minWidth: 200, // 最小宽度保证按钮可见
-            maxWidth: '90%', // 最大宽度限制，避免超出面板
-            height: 72,
-            transition: 'left 0.3s ease-in-out',
-          }}
-        >
-          <Tooltip title="模式">
-            <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <TuneIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="移动">
-            <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <PanToolIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="选择">
-            <IconButton size="medium" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <NavigationIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="矩形">
-            <IconButton size="medium" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <CropSquareIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="椭圆">
-            <IconButton size="medium" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <CircleOutlinedIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="箭头">
-            <IconButton size="medium" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <ArrowRightAltIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="连线">
-            <IconButton size="medium" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <HorizontalRuleIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="自由绘制">
-            <IconButton size="medium" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <CreateIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="文字">
-            <IconButton size="medium" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <TextFieldsIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="橡皮擦">
-            <IconButton size="medium" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <EraserIcon sx={{ fontSize: '36px', position: 'relative', top: -2 }} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="素材库">
-            <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <SchemaIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-
-        {/* 模式选择弹窗（美观卡片样式） */}
-        <Modal open={isModeDialogOpen} onClose={() => setIsModeDialogOpen(false)}>
-          <Box
-            sx={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              bgcolor: '#fff',
-              borderRadius: 3,
-              boxShadow: 10,
-              p: 3,
-              minWidth: 560,
-            }}
-          >
-            <Typography variant="h6" sx={{ mb: 2, textAlign: 'center', fontWeight: 600 }}>选择模式</Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-              <Box
-                onClick={() => changeMode('story')}
-                sx={{
-                  p: 2,
-                  border: '1px solid #e0e0e0',
-                  borderRadius: 2,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': { boxShadow: 3, borderColor: '#cfcfcf', transform: 'translateY(-2px)' },
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Book sx={{ fontSize: 28, color: 'primary.main' }} />
-                  <Typography variant="subtitle1" fontWeight={600}>故事模式</Typography>
-        </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  按步骤完成链表题目，AI 提示与检查随时辅助。
-                </Typography>
-              </Box>
-              <Box
-                onClick={() => changeMode('explore')}
-                sx={{
-                  p: 2,
-                  border: '1px solid #e0e0e0',
-                  borderRadius: 2,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': { boxShadow: 3, borderColor: '#cfcfcf', transform: 'translateY(-2px)' },
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Explore sx={{ fontSize: 28, color: 'secondary.main' }} />
-                  <Typography variant="subtitle1" fontWeight={600}>探索模式</Typography>
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  自由绘画，随时获取 AI 提示与检查。
-                </Typography>
-              </Box>
-            </Box>
-            <Box sx={{ textAlign: 'center', mt: 2 }}>
-              <Button variant="outlined" size="small" onClick={() => setIsModeDialogOpen(false)}>关闭</Button>
-            </Box>
-          </Box>
-        </Modal>
-
-        <Excalidraw 
-          excalidrawAPI={(api) => setExcalidrawAPI(api)}
-          onChange={(elements, appState, files) => {
-            // 实时保存画布变化
-            if (api) {
-              // console.log(`🎨 Excalidraw onChange 事件 - 模式: ${mode}, 元素数: ${elements.length}`);
-              // 若存在 AI Ghost，用户一旦作画（元素数量增加）则清除 Ghost
-              try {
-                if (aiGhostActiveRef.current && elements.length > lastElementsCountRef.current) {
-                  setAiGhost(null);
-                  aiGhostActiveRef.current = false;
-                }
-              } catch {}
-              // 使用防抖保存，避免频繁保存
-              if (autoSaveTimerRef.current) {
-                clearTimeout(autoSaveTimerRef.current);
-              }
-              autoSaveTimerRef.current = setTimeout(() => {
-                // 只有在正确的模式下才保存，并且确保不是正在切换模式
-                if ((mode === 'story' || mode === 'explore') && !isModeSwitching.current) {
-                  // console.log(`💾 自动保存 - 模式: ${mode}`);
-                saveCurrentScene();
-                } else {
-                  // console.log(`⚠️ 跳过自动保存 - 模式: ${mode}, 是否正在切换: ${isModeSwitching.current}`);
-                }
-              }, 300); // 300ms 后保存
-            }
-          }}
-          // 移动设备适配配置
-         
-          UIOptions={{
-            tools: { image: false },               // 隐藏工具（移除不受支持的 'line' 字段）
-            // canvasActions: {
-            //   saveToActiveFile: true,
-            //   loadScene: false,
-            //   export: false,
-            //   saveAsImage: false,
-            //   clearCanvas: true,
-            // },
-            dockedSidebarBreakpoint: 100000, // 移动设备上不显示侧边栏
-            welcomeScreen: false, // 禁用欢迎屏幕
-          }}
-          // 触摸设备优化
-          gridModeEnabled={false} // 移动设备上禁用网格模式
-          zenModeEnabled={false} // 移动设备上禁用禅模式
-          viewModeEnabled={false} // 移动设备上禁用视图模式
-          // 移动设备特定的应用状态
-          initialData={{
-            appState: {
-              viewBackgroundColor: "#fff",
-              // 移动设备上禁用一些功能
-              showWelcomeScreen: false,
-              // 触摸设备优化
-              penMode: false,
-              gridSize: undefined,
-            },
-            scrollToContent: true
-          }}
-        />
-
-        {/* 画布点击插入覆盖层：仅在待插入模式开启时显示 */}
-        {pendingInsertTool === 'rectangle' && (
-          <Box
-            onClick={async (e) => {
-              if (!excalidrawAPI) return;
-              try {
-                const appState = excalidrawAPI.getAppState();
-                const scrollX = (appState && (appState as any).scrollX) || 0;
-                const scrollY = (appState && (appState as any).scrollY) || 0;
-                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-                const rect = rightPaneRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const clientX = (e as any).clientX as number;
-                const clientY = (e as any).clientY as number;
-                const sceneX = scrollX + (clientX - rect.left) / zoom;
-                const sceneY = scrollY + (clientY - rect.top) / zoom;
-                await insertFixedRectangleAt(sceneX, sceneY);
-              } finally {
-                setPendingInsertTool(null);
-                setInsertGhost(null);
-                // 插入后切回选择工具
-                (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
-              }
-            }}
-            onMouseMove={(e) => {
-              if (!excalidrawAPI) return;
-              const appState = excalidrawAPI.getAppState();
-              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-              const rect = rightPaneRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              const clientX = (e as any).clientX as number;
-              const clientY = (e as any).clientY as number;
-              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
-            }}
-            onMouseLeave={() => setInsertGhost(null)}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 40,
-              cursor: 'crosshair',
-              background: 'transparent',
-            }}
-          />
-        )}
-
-        {/* Ghost 预览矩形（仅在 pendingInsertTool=rectangle 时显示） */}
-        {pendingInsertTool === 'rectangle' && insertGhost && (
-          <Box
-            sx={{
-              position: 'absolute',
-              zIndex: 41,
-              pointerEvents: 'none',
-              border: '2px dashed #666',
-              backgroundColor: 'rgba(0,0,0,0.02)',
-              top: insertGhost.y - (50 * insertGhost.zoom) / 2,
-              left: insertGhost.x - (50 * insertGhost.zoom) / 2,
-              width: 50 * insertGhost.zoom,
-              height: 50 * insertGhost.zoom,
-              borderRadius: 2,
-            }}
-          />
-        )}
-
-        {/* 画布点击插入覆盖层：椭圆（默认圆形） */}
-        {pendingInsertTool === 'ellipse' && (
-          <Box
-            onClick={async (e) => {
-              if (!excalidrawAPI) return;
-              try {
-                const appState = excalidrawAPI.getAppState();
-                const scrollX = (appState && (appState as any).scrollX) || 0;
-                const scrollY = (appState && (appState as any).scrollY) || 0;
-                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-                const rect = rightPaneRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const clientX = (e as any).clientX as number;
-                const clientY = (e as any).clientY as number;
-                const sceneX = scrollX + (clientX - rect.left) / zoom;
-                const sceneY = scrollY + (clientY - rect.top) / zoom;
-                await insertFixedEllipseAt(sceneX, sceneY);
-              } finally {
-                setPendingInsertTool(null);
-                setInsertGhost(null);
-                // 插入后切回选择工具
-                (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
-              }
-            }}
-            onMouseMove={(e) => {
-              if (!excalidrawAPI) return;
-              const appState = excalidrawAPI.getAppState();
-              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-              const rect = rightPaneRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              const clientX = (e as any).clientX as number;
-              const clientY = (e as any).clientY as number;
-              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
-            }}
-            onMouseLeave={() => setInsertGhost(null)}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 40,
-              cursor: 'crosshair',
-              background: 'transparent',
-            }}
-          />
-        )}
-
-        {/* Ghost 预览圆形（仅在 pendingInsertTool=ellipse 时显示） */}
-        {pendingInsertTool === 'ellipse' && insertGhost && (
-          <Box
-            sx={{
-              position: 'absolute',
-              zIndex: 41,
-              pointerEvents: 'none',
-              border: '2px dashed #666',
-              backgroundColor: 'rgba(0,0,0,0.02)',
-              top: insertGhost.y - (50 * insertGhost.zoom) / 2,
-              left: insertGhost.x - (50 * insertGhost.zoom) / 2,
-              width: 50 * insertGhost.zoom,
-              height: 50 * insertGhost.zoom,
-              borderRadius: '50%',
-            }}
-          />
-        )}
-
-        {/* 底部素材库面板 */}
-        {showLibraryBottom && (
-          <Box
-            sx={{
-              position: 'absolute',
-              left: '50%',
-              bottom: 80,
-              transform: 'translateX(-50%)',
-              zIndex: 35,
-              bgcolor: 'rgba(255,255,255,0.98)',
-              borderRadius: 1,
-              boxShadow: 3,
-              p: 1,
-              width: '80%',
-              maxWidth: 900,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>素材库</Typography>
-              <Button size="small" onClick={() => setShowLibraryBottom(false)}>关闭</Button>
-            </Box>
-            <Box sx={{
-              display: 'grid',
-              gridAutoFlow: 'column',
-              gridTemplateRows: 'repeat(2, auto)',
-              gap: 1,
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              p: 0.5,
-              alignItems: 'start'
-            }}>
-              {libraryItems && libraryItems.length > 0 ? (
-                libraryItems.slice().reverse().map((item: any, idx: number) => {
-                  const origIdx = libraryItems.length - 1 - idx;
-                  const thumbId = String(item?.id ?? `item-${origIdx}`);
-                  return (
-                  <Box key={thumbId} sx={{ textAlign: 'center', width: 120 }}>
-                    <LibraryItemThumb
-                      item={item}
-                      thumbId={thumbId}
-                      width={110}
-                      height={72}
-                      onClick={() => {
-                        setPendingLibraryItem(item);
-                        // 预计算素材包围盒，用于 Ghost 预览
-                        try {
-                          const els: any[] = item?.elements || [];
-                          if (els.length) {
-                            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                            for (const el of els) {
-                              const x = typeof el.x === 'number' ? el.x : 0;
-                              const y = typeof el.y === 'number' ? el.y : 0;
-                              const w = typeof el.width === 'number' ? el.width : 0;
-                              const h = typeof el.height === 'number' ? el.height : 0;
-                              minX = Math.min(minX, x);
-                              minY = Math.min(minY, y);
-                              maxX = Math.max(maxX, x + w);
-                              maxY = Math.max(maxY, y + h);
-                            }
-                            const w = Math.max(1, maxX - minX);
-                            const h = Math.max(1, maxY - minY);
-                            // 归一化元素到局部坐标系（以 minX/minY 为原点）
-                            const mapped = els.map((el: any) => {
-                              const x = (el.x ?? 0) - minX;
-                              const y = (el.y ?? 0) - minY;
-                              return {
-                                type: el.type,
-                                x, y,
-                                width: el.width ?? 0,
-                                height: el.height ?? 0,
-                                points: Array.isArray(el.points) ? el.points : undefined,
-                                text: el.text,
-                                fontSize: el.fontSize ?? 18,
-                                strokeColor: el.strokeColor ?? '#000',
-                                backgroundColor: el.backgroundColor ?? 'transparent',
-                                strokeWidth: el.strokeWidth ?? 2,
-                                strokeStyle: el.strokeStyle ?? 'solid',
-                              };
-                            });
-                            setLibraryGhost({ width: w, height: h, minX, minY, elements: mapped });
-                          } else {
-                            setLibraryGhost(null);
-                          }
-                        } catch {
-                          setLibraryGhost(null);
-                        }
-                        setShowLibraryBottom(false);
-                      }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5, maxWidth: 110 }} noWrap>
-                      {libraryCaptions[origIdx] ?? item?.name ?? `Item ${origIdx + 1}`}
-                    </Typography>
-                  </Box>
-                );})
-              ) : (
-                <Typography variant="caption" color="text.secondary">暂无素材</Typography>
-              )}
-            </Box>
-          </Box>
-        )}
-
-        {/* 库项点击后在画布点击位置插入 */}
-        {pendingLibraryItem && (
-          <Box
-            onClick={async (e) => {
-              if (!excalidrawAPI) return;
-              try {
-                const appState = excalidrawAPI.getAppState();
-                const scrollX = (appState && (appState as any).scrollX) || 0;
-                const scrollY = (appState && (appState as any).scrollY) || 0;
-                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-                const rect = rightPaneRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const clientX = (e as any).clientX as number;
-                const clientY = (e as any).clientY as number;
-                const sceneX = scrollX + (clientX - rect.left) / zoom;
-                const sceneY = scrollY + (clientY - rect.top) / zoom;
-
-                // 计算库元素的包围盒，居中插入
-                const elements: any[] = pendingLibraryItem?.elements || [];
-                if (!elements.length) return;
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                for (const el of elements) {
-                  if (typeof el.x === 'number' && typeof el.y === 'number') {
-                    minX = Math.min(minX, el.x);
-                    minY = Math.min(minY, el.y);
-                    const w = typeof el.width === 'number' ? el.width : 0;
-                    const h = typeof el.height === 'number' ? el.height : 0;
-                    maxX = Math.max(maxX, el.x + w);
-                    maxY = Math.max(maxY, el.y + h);
+                    bgcolor: '#1565c0',
                   }
-                }
-                const cx = (minX + maxX) / 2;
-                const cy = (minY + maxY) / 2;
-                const dx = sceneX - cx;
-                const dy = sceneY - cy;
-                const cloned = elements.map((el: any) => ({ ...el, x: el.x + dx, y: el.y + dy }));
-
-                excalidrawAPI.updateScene({
-                  elements: [...excalidrawAPI.getSceneElements(), ...cloned as any],
-                });
-                saveCurrentScene();
-              } finally {
-                setPendingLibraryItem(null);
-                setLibraryGhost(null);
-              }
-            }}
-            onMouseMove={(e) => {
-              if (!excalidrawAPI) return;
-              const appState = excalidrawAPI.getAppState();
-              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-              const rect = rightPaneRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              const clientX = (e as any).clientX as number;
-              const clientY = (e as any).clientY as number;
-              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
-            }}
-            onMouseLeave={() => setInsertGhost(null)}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 40,
-              cursor: 'crosshair',
-              background: 'transparent',
-            }}
-          />
-        )}
-        {/* Ghost 预览素材（完整形状渲染） */}
-        {pendingLibraryItem && insertGhost && libraryGhost && (
-          <Box
-            sx={{ position: 'absolute', zIndex: 41, pointerEvents: 'none', top: 0, left: 0, right: 0, bottom: 0 }}
-          >
-            <svg
-              width={libraryGhost.width * insertGhost.zoom}
-              height={libraryGhost.height * insertGhost.zoom}
-              viewBox={`0 0 ${libraryGhost.width} ${libraryGhost.height}`}
+                      }}
+                    >
+                      {zh ? '动画' : 'Animation'}
+                    </Button>
+                    <Button
+                      size="small"
+                  variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/greed/drawing'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      {zh ? '画图' : 'SketchMind'}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => window.location.href = '/greed/testing'}
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      {zh ? '测试' : 'Post task'}
+                    </Button>
+                  </Box>
+                </Box>
+                {/* 组3 */}
+                {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      textAlign: 'center',
+                      py: 1,
+                      px: 1,
+                      fontSize: '0.875rem',
+                      fontWeight: 'normal',
+                      opacity: isNavCollapsed ? 0 : 1,
+                      transition: 'opacity 0.3s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    组3
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      C1D2
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      C2D1
+                    </Button>
+                  </Box>
+                </Box> */}
+    
+                {/* 组4 */}
+                {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      textAlign: 'center',
+                      py: 1,
+                      px: 1,
+                      fontSize: '0.875rem',
+                      fontWeight: 'normal',
+                      opacity: isNavCollapsed ? 0 : 1,
+                      transition: 'opacity 0.3s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    组4
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      C2D1
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      fullWidth
+                      sx={{
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1,
+                        minHeight: '20px',
+                        textTransform: 'none',
+                        opacity: isNavCollapsed ? 0 : 1,
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    >
+                      C1D2
+                    </Button>
+                  </Box>
+                </Box> */}
+            </Box>
+          </Box>
+    
+            {/* 翻译功能（已移动到顶部左侧） */}
+            {false && (
+            <Box sx={{ p: 1, borderTop: 1, borderColor: 'divider' }} />
+            )}
+          </Box>
+    
+            {/* 画布区域 + 左侧底部 AI 结果栏 */}
+            <div 
+              className="flex-1"
+              ref={leftColumnRef}
               style={{
-                position: 'absolute',
-                top: insertGhost.y - (libraryGhost.height * insertGhost.zoom) / 2,
-                left: insertGhost.x - (libraryGhost.width * insertGhost.zoom) / 2,
-                overflow: 'visible',
-                opacity: 0.9,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
               }}
             >
-              <defs>
-                <marker id="lib-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-                  <path d="M0,0 L10,5 L0,10 z" fill="#666" />
-                </marker>
-              </defs>
-              {libraryGhost.elements.map((el, idx) => {
-                const stroke = el.strokeColor || '#000';
-                const fill = el.backgroundColor && el.backgroundColor !== 'transparent' ? el.backgroundColor : 'none';
-                const sw = Math.max(1, el.strokeWidth || 2);
-                const dash = el.strokeStyle === 'dashed' ? '6,4' : el.strokeStyle === 'dotted' ? '2,4' : undefined;
-                if (el.type === 'rectangle' || el.type === 'image') {
-                  return (
-                    <rect key={idx} x={el.x} y={el.y} width={el.width} height={el.height} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
-                  );
-                }
-                if (el.type === 'ellipse') {
-                  return (
-                    <ellipse key={idx} cx={el.x + el.width / 2} cy={el.y + el.height / 2} rx={el.width / 2} ry={el.height / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
-                  );
-                }
-                if (el.type === 'diamond') {
-                  const points = [
-                    [el.x + el.width / 2, el.y],
-                    [el.x + el.width, el.y + el.height / 2],
-                    [el.x + el.width / 2, el.y + el.height],
-                    [el.x, el.y + el.height / 2],
-                  ];
-                  return (
-                    <polygon key={idx} points={points.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
-                  );
-                }
-                if (el.type === 'line' || el.type === 'arrow') {
-                  const baseX = el.x;
-                  const baseY = el.y;
-                  const pts: [number, number][] = Array.isArray(el.points) && el.points.length ? el.points.map((p: [number, number]) => [baseX + p[0], baseY + p[1]]) : [[baseX, baseY], [baseX + (el.width || 0), baseY + (el.height || 0)]];
-                  return (
-                    <polyline key={idx} points={pts.map(p => p.join(',')).join(' ')} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd={el.type === 'arrow' ? 'url(#lib-ghost-arrow)' : undefined} />
-                  );
-                }
-                if (el.type === 'text' && el.text) {
-                  return (
-                    <text key={idx} x={el.x} y={el.y + (el.fontSize || 18)} fontSize={el.fontSize || 18} fill={stroke}>
-                      {el.text}
-                    </text>
-                  );
-                }
-                return null;
-              })}
-            </svg>
-          </Box>
-        )}
-
-        {/* AI 新增元素闪烁动画层（仅显示 1.2s） */}
-        {aiFlash && excalidrawAPI && (
-          <Box
-            sx={{
-              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-              zIndex: 42, pointerEvents: 'none',
-              '@keyframes aiPulse': {
-                '0%': { opacity: 0, transform: 'scale(0.98)' },
-                '15%': { opacity: 1, transform: 'scale(1)' },
-                '100%': { opacity: 0, transform: 'scale(1)' },
-              },
+    
+            
+              {/* 顶部自定义工具栏（移除占位，改为覆盖在遮挡条之上） */}
+              {false && <Box />}
+    
+              {/* 画布内容区域 */}
+              <div
+                className="bg-white relative w-full"
+            ref={rightPaneRef}
+            style={{
+              touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
+              overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
+              overflow: 'hidden',            // 避免绘制时容器产生滚动条
+              contain: 'layout paint',       // 限定重绘范围，减少抖动
+              flex: '1 1 auto',
+              minHeight: 0,
             }}
           >
-            {(() => {
-              const app = excalidrawAPI.getAppState?.() as any;
-              const scrollX = (app && app.scrollX) || 0;
-              const scrollY = (app && app.scrollY) || 0;
-              const zoom = (app && (app.zoom?.value ?? app.zoom)) || 1;
-              const { width, height } = aiFlash.canvas;
-              const { x: offX, y: offY } = aiFlash.offset;
-              const toScene = (xn: number, yn: number) => ({ x: offX + xn * width, y: offY + yn * height });
-              const bbox = {
-                top: (offY - scrollY) * zoom,
-                left: (offX - scrollX) * zoom,
-                width: width * zoom,
-                height: height * zoom,
-              };
-              return (
+    
+            {/* 顶部统一遮挡条（避免原生控件残影；不拦截鼠标） */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 120,
+                bgcolor: '#fff',
+                zIndex: 25,
+                pointerEvents: 'none',
+              }}
+            />
+    
+            {/* 覆盖在遮挡条之上的工具栏（不占用内容高度） */}
+            {/* <Box
+              sx={{
+                position: 'absolute',
+                top: 8,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 26,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.25,
+                bgcolor: 'rgba(255,255,255,0.98)',
+                // border: '1px solid #e0e0e0',
+                borderRadius: 2,
+                px: 1,
+                py: 0.5,
+              }}
+            >
+              <Tooltip title={t.toolbar_mode}>
+                <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <TuneIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_move}>
+                <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <PanToolIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_select}>
+                <IconButton size="medium" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <NavigationIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_rect}>
+                <IconButton size="medium" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <CropSquareIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_ellipse}>
+                <IconButton size="medium" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <CircleOutlinedIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_arrow}>
+                <IconButton size="medium" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <ArrowRightAltIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_line}>
+                <IconButton size="medium" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <HorizontalRuleIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_draw}>
+                <IconButton size="medium" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <CreateIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_text}>
+                <IconButton size="medium" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <TextFieldsIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_eraser}>
+                <IconButton size="medium" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <EraserIcon sx={{ fontSize: '36px', position: 'relative', top: -2 }} />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t.toolbar_library}>
+                <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
+                  <SchemaIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+            </Box> */}
+    
+            {/* 面板折叠时的展开指示器 - 放在左下角，不挡住导航栏 */}
+            {isLeftPanelCollapsed && (
+              <Box
+                sx={{
+                  position: 'fixed',
+                  left: 16,
+                  bottom: 64,
+                  zIndex: 1000,
+                }}
+              >
+                <Tooltip title="展开侧边栏" placement="right">
+                  <IconButton
+                    onClick={() => setIsLeftPanelCollapsed(false)}
+                    sx={{
+                      bgcolor: 'primary.main',
+                      color: 'white',
+                      '&:hover': { 
+                        bgcolor: 'primary.dark',
+                        transform: 'scale(1.1)',
+                        boxShadow: 4,
+                      },
+                      boxShadow: 3,
+                      width: 56,
+                      height: 56,
+                      fontSize: '1.5rem',
+                      border: '3px solid white',
+                      transition: 'all 0.2s ease-in-out',
+                      // 触摸设备优化
+                      minWidth: 56,
+                      minHeight: 56,
+                    }}
+                  >
+                    <ChevronRight />
+                  </IconButton>
+                </Tooltip>
+                
+                {/* 小提示文字 */}
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    left: 70,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    bgcolor: 'rgba(0,0,0,0.7)',
+                    color: 'white',
+                    px: 1.5,
+                    py: 0.5,
+                    borderRadius: 1,
+                    fontSize: '0.75rem',
+                    whiteSpace: 'nowrap',
+                    opacity: 0.9,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  展开
+                </Box>
+              </Box>
+            )}
+    
+          {/* 右栏悬浮按钮组 */}
+            <Box
+              position="absolute"
+              top={19}
+              left={isLeftPanelCollapsed ? 300 : 280}            // 根据左侧面板状态调整位置
+              zIndex={10}
+              bgcolor="rgba(255,255,255,0.9)"
+              borderRadius={1}
+              // boxShadow={1}
+              display="flex"
+              gap={1}
+              sx={{
+                transition: 'left 0.3s ease-in-out',
+              }}
+            >
+              {/* <Tooltip title="Check (save this step)">
+                <IconButton color="primary" onClick={onCheck}>
+                  <CheckIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Next Draw (overlay from backend)">
+                <IconButton color="success" onClick={onNextDraw}>
+                  <Lightbulb />
+                </IconButton>
+              </Tooltip> */}
+              {/* <Tooltip title="Insert fixed rectangle">
+                <IconButton color="inherit" onClick={insertFixedRectangle}>
+                  <CropSquareIcon />
+                </IconButton>
+              </Tooltip> */}
+            </Box>
+    
+            {/* 覆盖 Excalidraw 左侧原生导航（工具栏）
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: 88,
+                height: '100%',
+                bgcolor: '#fff',
+                zIndex: 20,
+                pointerEvents: 'auto', // 阻止点击到原生导航
+              }}
+            /> */}
+    
+            {/* 遮挡物已移除，避免滚动画布时遮住用户图形 */}
+            {false && (
+              <Box sx={{ position: 'absolute' }} />
+            )}
+    
+            {false && (
+              <Box sx={{ position: 'absolute' }} />
+            )}
+    
+            {false && !isLeftPanelCollapsed && (
+              <Box sx={{ position: 'absolute' }} />
+            )}
+    
+            {/* 覆盖 Excalidraw 顶部中间原生工具栏 */}
+            {/* <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '70%',
+                height: 64,
+                bgcolor: '#fff',
+                zIndex: 20,
+                pointerEvents: 'auto',
+                borderBottomLeftRadius: 6,
+                borderBottomRightRadius: 6,
+              }}
+            /> */}
+            {false && (
+              <Box sx={{ position: 'absolute' }} />
+            )}
+            {/* 自定义简化工具栏（已迁移到画布上方固定栏） */}
+            {false && (
+              <Box />
+            )}
+    
+            {/* 画布上方固定工具栏（已移除：使用左列顶部固定栏） */}
+            {false && <Box />}
+    
+            {/* 模式选择弹窗（美观卡片样式） */}
+            <Modal open={isModeDialogOpen} onClose={() => setIsModeDialogOpen(false)}>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  bgcolor: '#fff',
+                  borderRadius: 3,
+                  boxShadow: 10,
+                  p: 3,
+                  minWidth: 560,
+                }}
+              >
+                <Typography variant="h6" sx={{ mb: 2, textAlign: 'center', fontWeight: 600 }}>选择模式</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box
+                    onClick={() => changeMode('story')}
+                    sx={{
+                      p: 2,
+                      border: '1px solid #e0e0e0',
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': { boxShadow: 3, borderColor: '#cfcfcf', transform: 'translateY(-2px)' },
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Book sx={{ fontSize: 28, color: 'primary.main' }} />
+                      <Typography variant="subtitle1" fontWeight={600}>故事模式</Typography>
+            </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      按步骤完成链表题目，AI 提示与检查随时辅助。
+                    </Typography>
+                  </Box>
+                  <Box
+                    onClick={() => changeMode('explore')}
+                    sx={{
+                      p: 2,
+                      border: '1px solid #e0e0e0',
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': { boxShadow: 3, borderColor: '#cfcfcf', transform: 'translateY(-2px)' },
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Explore sx={{ fontSize: 28, color: 'secondary.main' }} />
+                      <Typography variant="subtitle1" fontWeight={600}>探索模式</Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      自由绘画，随时获取 AI 提示与检查。
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ textAlign: 'center', mt: 2 }}>
+                  <Button variant="outlined" size="small" onClick={() => setIsModeDialogOpen(false)}>关闭</Button>
+                </Box>
+              </Box>
+            </Modal>
+    
+            <Excalidraw 
+              excalidrawAPI={(api) => setExcalidrawAPI(api)}
+              onChange={(elements, appState, files) => {
+                // 实时保存画布变化
+                if (api) {
+                  // console.log(`🎨 Excalidraw onChange 事件 - 模式: ${mode}, 元素数: ${elements.length}`);
+                  // 若存在 AI Ghost，用户一旦作画（元素数量增加）则清除 Ghost
+                  try {
+                    if (aiGhostActiveRef.current && elements.length > lastElementsCountRef.current) {
+                      setAiGhost(null);
+                      aiGhostActiveRef.current = false;
+                    }
+                  } catch {}
+                  // 使用防抖保存，避免频繁保存
+                  if (autoSaveTimerRef.current) {
+                    clearTimeout(autoSaveTimerRef.current);
+                  }
+                  autoSaveTimerRef.current = setTimeout(() => {
+                    // 只有在正确的模式下才保存，并且确保不是正在切换模式
+                    if ((mode === 'story' || mode === 'explore') && !isModeSwitching.current) {
+                      // console.log(`💾 自动保存 - 模式: ${mode}`);
+                    saveCurrentScene();
+                    } else {
+                      // console.log(`⚠️ 跳过自动保存 - 模式: ${mode}, 是否正在切换: ${isModeSwitching.current}`);
+                    }
+                  }, 300); // 300ms 后保存
+                }
+              }}
+              // 移动设备适配配置
+             
+              UIOptions={{
+                tools: { image: false },               // 隐藏工具（移除不受支持的 'line' 字段）
+                // canvasActions: {
+                //   saveToActiveFile: true,
+                //   loadScene: false,
+                //   export: false,
+                //   saveAsImage: false,
+                //   clearCanvas: true,
+                // },
+                dockedSidebarBreakpoint: 100000, // 移动设备上不显示侧边栏
+                welcomeScreen: false, // 禁用欢迎屏幕
+              }}
+              // 触摸设备优化
+              gridModeEnabled={false} // 移动设备上禁用网格模式
+              zenModeEnabled={false} // 移动设备上禁用禅模式
+          viewModeEnabled={true} // 锁定画布，防止用户拖动和编辑
+              // 移动设备特定的应用状态
+              initialData={{
+                appState: {
+                  viewBackgroundColor: "#fff",
+                  // 移动设备上禁用一些功能
+                  showWelcomeScreen: false,
+                  // 触摸设备优化
+                  penMode: false,
+                  gridSize: undefined,
+                },
+                scrollToContent: true
+              }}
+            />
+    
+            {/* 画布点击插入覆盖层：仅在待插入模式开启时显示 */}
+            {pendingInsertTool === 'rectangle' && (
+              <Box
+                onClick={async (e) => {
+                  if (!excalidrawAPI) return;
+                  try {
+                    const appState = excalidrawAPI.getAppState();
+                    const scrollX = (appState && (appState as any).scrollX) || 0;
+                    const scrollY = (appState && (appState as any).scrollY) || 0;
+                    const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                    const rect = rightPaneRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    const clientX = (e as any).clientX as number;
+                    const clientY = (e as any).clientY as number;
+                    const sceneX = scrollX + (clientX - rect.left) / zoom;
+                    const sceneY = scrollY + (clientY - rect.top) / zoom;
+                    await insertFixedRectangleAt(sceneX, sceneY);
+                  } finally {
+                    setPendingInsertTool(null);
+                    setInsertGhost(null);
+                    // 插入后切回选择工具
+                    (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
+                  }
+                }}
+                onMouseMove={(e) => {
+                  if (!excalidrawAPI) return;
+                  const appState = excalidrawAPI.getAppState();
+                  const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                  const rect = rightPaneRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+                  const clientX = (e as any).clientX as number;
+                  const clientY = (e as any).clientY as number;
+                  setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+                }}
+                onMouseLeave={() => setInsertGhost(null)}
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 40,
+                  cursor: 'crosshair',
+                  background: 'transparent',
+                }}
+              />
+            )}
+    
+            {/* Ghost 预览矩形（仅在 pendingInsertTool=rectangle 时显示） */}
+            {pendingInsertTool === 'rectangle' && insertGhost && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  zIndex: 41,
+                  pointerEvents: 'none',
+                  border: '2px dashed #666',
+                  backgroundColor: 'rgba(0,0,0,0.02)',
+                  top: insertGhost.y - (50 * insertGhost.zoom) / 2,
+                  left: insertGhost.x - (50 * insertGhost.zoom) / 2,
+                  width: 50 * insertGhost.zoom,
+                  height: 50 * insertGhost.zoom,
+                  borderRadius: 2,
+                }}
+              />
+            )}
+    
+            {/* 画布点击插入覆盖层：椭圆（默认圆形） */}
+            {pendingInsertTool === 'ellipse' && (
+              <Box
+                onClick={async (e) => {
+                  if (!excalidrawAPI) return;
+                  try {
+                    const appState = excalidrawAPI.getAppState();
+                    const scrollX = (appState && (appState as any).scrollX) || 0;
+                    const scrollY = (appState && (appState as any).scrollY) || 0;
+                    const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                    const rect = rightPaneRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    const clientX = (e as any).clientX as number;
+                    const clientY = (e as any).clientY as number;
+                    const sceneX = scrollX + (clientX - rect.left) / zoom;
+                    const sceneY = scrollY + (clientY - rect.top) / zoom;
+                    await insertFixedEllipseAt(sceneX, sceneY);
+                  } finally {
+                    setPendingInsertTool(null);
+                    setInsertGhost(null);
+                    // 插入后切回选择工具
+                    (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
+                  }
+                }}
+                onMouseMove={(e) => {
+                  if (!excalidrawAPI) return;
+                  const appState = excalidrawAPI.getAppState();
+                  const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                  const rect = rightPaneRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+                  const clientX = (e as any).clientX as number;
+                  const clientY = (e as any).clientY as number;
+                  setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+                }}
+                onMouseLeave={() => setInsertGhost(null)}
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 40,
+                  cursor: 'crosshair',
+                  background: 'transparent',
+                }}
+              />
+            )}
+    
+            {/* Ghost 预览圆形（仅在 pendingInsertTool=ellipse 时显示） */}
+            {pendingInsertTool === 'ellipse' && insertGhost && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  zIndex: 41,
+                  pointerEvents: 'none',
+                  border: '2px dashed #666',
+                  backgroundColor: 'rgba(0,0,0,0.02)',
+                  top: insertGhost.y - (50 * insertGhost.zoom) / 2,
+                  left: insertGhost.x - (50 * insertGhost.zoom) / 2,
+                  width: 50 * insertGhost.zoom,
+                  height: 50 * insertGhost.zoom,
+                  borderRadius: '50%',
+                }}
+              />
+            )}
+    
+            {/* 底部素材库面板 */}
+            {showLibraryBottom && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: '40%',
+                  bottom: 80,
+                  transform: 'translateX(-50%)',
+                  zIndex: 35,
+                  bgcolor: 'rgba(255,255,255,0.98)',
+                  borderRadius: 1,
+                  boxShadow: 3,
+                  p: 1,
+                  width: '40%',
+                  maxWidth: 450,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>素材库</Typography>
+                  <Button size="small" onClick={() => setShowLibraryBottom(false)}>关闭</Button>
+                </Box>
+                <Box sx={{
+                  display: 'grid',
+                  gridAutoFlow: 'column',
+                  gridTemplateRows: 'repeat(2, auto)',
+                  gap: 1,
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  p: 0.5,
+                  alignItems: 'start',
+                  maxHeight: '200px',
+                  '&::-webkit-scrollbar': {
+                    width: '6px',
+                    height: '6px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    bgcolor: 'rgba(0,0,0,0.1)',
+                    borderRadius: '3px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    bgcolor: 'rgba(0,0,0,0.3)',
+                    borderRadius: '3px',
+                    '&:hover': {
+                      bgcolor: 'rgba(0,0,0,0.5)',
+                    },
+                  },
+                  '&::-webkit-scrollbar-corner': {
+                    bgcolor: 'transparent',
+                  },
+                }}>
+                  {libraryItems && libraryItems.length > 0 ? (
+                    libraryItems.slice().reverse().map((item: any, idx: number) => {
+                      const origIdx = libraryItems.length - 1 - idx;
+                      const thumbId = String(item?.id ?? `item-${origIdx}`);
+                      return (
+                      <Box key={thumbId} sx={{ textAlign: 'center', width: 120 }}>
+                        <LibraryItemThumb
+                          item={item}
+                          thumbId={thumbId}
+                          width={110}
+                          height={72}
+                          onClick={() => {
+                            setPendingLibraryItem(item);
+                            // 预计算素材包围盒，用于 Ghost 预览
+                            try {
+                              const els: any[] = item?.elements || [];
+                              if (els.length) {
+                                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                for (const el of els) {
+                                  const x = typeof el.x === 'number' ? el.x : 0;
+                                  const y = typeof el.y === 'number' ? el.y : 0;
+                                  const w = typeof el.width === 'number' ? el.width : 0;
+                                  const h = typeof el.height === 'number' ? el.height : 0;
+                                  minX = Math.min(minX, x);
+                                  minY = Math.min(minY, y);
+                                  maxX = Math.max(maxX, x + w);
+                                  maxY = Math.max(maxY, y + h);
+                                }
+                                const w = Math.max(1, maxX - minX);
+                                const h = Math.max(1, maxY - minY);
+                                // 归一化元素到局部坐标系（以 minX/minY 为原点）
+                                const mapped = els.map((el: any) => {
+                                  const x = (el.x ?? 0) - minX;
+                                  const y = (el.y ?? 0) - minY;
+                                  return {
+                                    type: el.type,
+                                    x, y,
+                                    width: el.width ?? 0,
+                                    height: el.height ?? 0,
+                                    points: Array.isArray(el.points) ? el.points : undefined,
+                                    text: el.text,
+                                    fontSize: el.fontSize ?? 18,
+                                    strokeColor: el.strokeColor ?? '#000',
+                                    backgroundColor: el.backgroundColor ?? 'transparent',
+                                    strokeWidth: el.strokeWidth ?? 2,
+                                    strokeStyle: el.strokeStyle ?? 'solid',
+                                  };
+                                });
+                                setLibraryGhost({ width: w, height: h, minX, minY, elements: mapped });
+                              } else {
+                                setLibraryGhost(null);
+                              }
+                            } catch {
+                              setLibraryGhost(null);
+                            }
+                            setShowLibraryBottom(false);
+                          }}
+                        />
+                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, maxWidth: 110 }} noWrap>
+                          {libraryCaptions[origIdx] ?? item?.name ?? `Item ${origIdx + 1}`}
+                        </Typography>
+                      </Box>
+                    );})
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">暂无素材</Typography>
+                  )}
+                </Box>
+              </Box>
+            )}
+    
+            {/* 库项点击后在画布点击位置插入 */}
+            {pendingLibraryItem && (
+              <Box
+                onClick={async (e) => {
+                  if (!excalidrawAPI) return;
+                  try {
+                    const appState = excalidrawAPI.getAppState();
+                    const scrollX = (appState && (appState as any).scrollX) || 0;
+                    const scrollY = (appState && (appState as any).scrollY) || 0;
+                    const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                    const rect = rightPaneRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    const clientX = (e as any).clientX as number;
+                    const clientY = (e as any).clientY as number;
+                    const sceneX = scrollX + (clientX - rect.left) / zoom;
+                    const sceneY = scrollY + (clientY - rect.top) / zoom;
+    
+                    // 计算库元素的包围盒，居中插入
+                    const elements: any[] = pendingLibraryItem?.elements || [];
+                    if (!elements.length) return;
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    for (const el of elements) {
+                      if (typeof el.x === 'number' && typeof el.y === 'number') {
+                        minX = Math.min(minX, el.x);
+                        minY = Math.min(minY, el.y);
+                        const w = typeof el.width === 'number' ? el.width : 0;
+                        const h = typeof el.height === 'number' ? el.height : 0;
+                        maxX = Math.max(maxX, el.x + w);
+                        maxY = Math.max(maxY, el.y + h);
+                      }
+                    }
+                    const cx = (minX + maxX) / 2;
+                    const cy = (minY + maxY) / 2;
+                    const dx = sceneX - cx;
+                    const dy = sceneY - cy;
+                    const cloned = elements.map((el: any) => ({ ...el, x: el.x + dx, y: el.y + dy }));
+    
+                    excalidrawAPI.updateScene({
+                      elements: [...excalidrawAPI.getSceneElements(), ...cloned as any],
+                    });
+                    saveCurrentScene();
+                  } finally {
+                    setPendingLibraryItem(null);
+                    setLibraryGhost(null);
+                  }
+                }}
+                onMouseMove={(e) => {
+                  if (!excalidrawAPI) return;
+                  const appState = excalidrawAPI.getAppState();
+                  const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+                  const rect = rightPaneRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+                  const clientX = (e as any).clientX as number;
+                  const clientY = (e as any).clientY as number;
+                  setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+                }}
+                onMouseLeave={() => setInsertGhost(null)}
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 40,
+                  cursor: 'crosshair',
+                  background: 'transparent',
+                }}
+              />
+            )}
+            {/* Ghost 预览素材（完整形状渲染） */}
+            {pendingLibraryItem && insertGhost && libraryGhost && (
+              <Box
+                sx={{ position: 'absolute', zIndex: 41, pointerEvents: 'none', top: 0, left: 0, right: 0, bottom: 0 }}
+              >
                 <svg
-                  width={bbox.width}
-                  height={bbox.height}
-                  viewBox={`0 0 ${width} ${height}`}
-                  style={{ position: 'absolute', top: bbox.top, left: bbox.left, filter: 'drop-shadow(0 0 6px rgba(0,200,0,0.6))', animation: 'aiPulse 1200ms ease-out both' }}
+                  width={libraryGhost.width * insertGhost.zoom}
+                  height={libraryGhost.height * insertGhost.zoom}
+                  viewBox={`0 0 ${libraryGhost.width} ${libraryGhost.height}`}
+                  style={{
+                    position: 'absolute',
+                    top: insertGhost.y - (libraryGhost.height * insertGhost.zoom) / 2,
+                    left: insertGhost.x - (libraryGhost.width * insertGhost.zoom) / 2,
+                    overflow: 'visible',
+                    opacity: 0.9,
+                  }}
                 >
                   <defs>
-                    <marker id="ai-flash-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-                      <path d="M0,0 L10,5 L0,10 z" fill="#00c853" />
+                    <marker id="lib-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L10,5 L0,10 z" fill="#666" />
                     </marker>
                   </defs>
-                  {aiFlash.elements.map((el: any, idx: number) => {
-                    const stroke = el?.style?.strokeColor || '#00c853';
-                    const fill = el?.style?.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : 'none';
-                    const sw = Math.max(2, (el?.style?.strokeWidth ?? 2) + 1);
-                    const dash = el?.style?.strokeStyle === 'dashed' ? '6,4' : el?.style?.strokeStyle === 'dotted' ? '2,4' : undefined;
+                  {libraryGhost.elements.map((el, idx) => {
+                    const stroke = el.strokeColor || '#000';
+                    const fill = el.backgroundColor && el.backgroundColor !== 'transparent' ? el.backgroundColor : 'none';
+                    const sw = Math.max(1, el.strokeWidth || 2);
+                    const dash = el.strokeStyle === 'dashed' ? '6,4' : el.strokeStyle === 'dotted' ? '2,4' : undefined;
                     if (el.type === 'rectangle' || el.type === 'image') {
-                      const p = toScene(el.x_norm, el.y_norm);
-                      const w = Math.max(1, el.w_norm * width);
-                      const h = Math.max(1, el.h_norm * height);
-                      return <rect key={idx} x={p.x - offX} y={p.y - offY} width={w} height={h} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                      return (
+                        <rect key={idx} x={el.x} y={el.y} width={el.width} height={el.height} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
+                      );
                     }
                     if (el.type === 'ellipse') {
-                      const p = toScene(el.x_norm, el.y_norm);
-                      const w = Math.max(1, el.w_norm * width);
-                      const h = Math.max(1, el.h_norm * height);
-                      return <ellipse key={idx} cx={p.x - offX + w / 2} cy={p.y - offY + h / 2} rx={w / 2} ry={h / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                      return (
+                        <ellipse key={idx} cx={el.x + el.width / 2} cy={el.y + el.height / 2} rx={el.width / 2} ry={el.height / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
+                      );
                     }
                     if (el.type === 'diamond') {
-                      const p = toScene(el.x_norm, el.y_norm);
-                      const w = Math.max(1, el.w_norm * width);
-                      const h = Math.max(1, el.h_norm * height);
-                      const pts = [
-                        [p.x - offX + w / 2, p.y - offY],
-                        [p.x - offX + w, p.y - offY + h / 2],
-                        [p.x - offX + w / 2, p.y - offY + h],
-                        [p.x - offX, p.y - offY + h / 2],
+                      const points = [
+                        [el.x + el.width / 2, el.y],
+                        [el.x + el.width, el.y + el.height / 2],
+                        [el.x + el.width / 2, el.y + el.height],
+                        [el.x, el.y + el.height / 2],
                       ];
-                      return <polygon key={idx} points={pts.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                      return (
+                        <polygon key={idx} points={points.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
+                      );
                     }
-                    if (el.type === 'arrow') {
-                      const s = toScene(el.x_norm, el.y_norm);
-                      const e = toScene(el.end_x_norm, el.end_y_norm);
-                      return <line key={idx} x1={s.x - offX} y1={s.y - offY} x2={e.x - offX} y2={e.y - offY} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd="url(#ai-flash-arrow)" />;
+                    if (el.type === 'line' || el.type === 'arrow') {
+                      const baseX = el.x;
+                      const baseY = el.y;
+                      const pts: [number, number][] = Array.isArray(el.points) && el.points.length ? el.points.map((p: [number, number]) => [baseX + p[0], baseY + p[1]]) : [[baseX, baseY], [baseX + (el.width || 0), baseY + (el.height || 0)]];
+                      return (
+                        <polyline key={idx} points={pts.map(p => p.join(',')).join(' ')} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd={el.type === 'arrow' ? 'url(#lib-ghost-arrow)' : undefined} />
+                      );
                     }
-                    if (el.type === 'line' || el.type === 'draw') {
-                      const pts = (el.points || []).map((pt: any) => {
-                        const p = toScene(pt.x_norm, pt.y_norm);
-                        return `${p.x - offX},${p.y - offY}`;
-                      }).join(' ');
-                      return <polyline key={idx} points={pts} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />;
-                    }
-                    if (el.type === 'text') {
-                      const p = toScene(el.x_norm, el.y_norm);
-                      return <text key={idx} x={p.x - offX} y={p.y - offY} fontSize={(el.fontSize ?? 20)} fill={stroke} opacity={0.9}>{el.text}</text>;
+                    if (el.type === 'text' && el.text) {
+                      return (
+                        <text key={idx} x={el.x} y={el.y + (el.fontSize || 18)} fontSize={el.fontSize || 18} fill={stroke}>
+                          {el.text}
+                        </text>
+                      );
                     }
                     return null;
                   })}
                 </svg>
-              );
-            })()}
-          </Box>
-         )}
+              </Box>
+            )}
+            {/* <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} /> */}
+    
+            {/* 自定义鼠标光标环已移除 */}
+    
+            {/* 调试信息显示 */}
+            {/* <Box
+              sx={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                px: 2,
+                py: 1,
+                fontSize: '0.75rem',
+                color: 'text.secondary',
+                zIndex: 100,
+                opacity: 0.8,
+                maxWidth: 350,
+              }}
+            > */}
+              {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Box>🔍 调试信息</Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  模式: {mode} | 步骤: {mode === 'story' ? currentStepIndex + 1 : '探索'}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  故事模式场景数: {Object.keys(scenes).length}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  当前步骤: {currentStepIndexRef.current + 1}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  当前步骤元素数: {scenes[currentStepIndexRef.current]?.elements?.length || 0}
+              </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  探索模式元素数: {exploreModeCanvas.elements.length}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  当前画布元素数: {excalidrawAPI?.getSceneElements()?.length || 0}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  最后保存模式: {debugInfo.lastSavedMode}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  最后保存步骤: {debugInfo.lastSavedStoryStep}
+                </Box>
+                <Box sx={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  最后保存探索元素: {debugInfo.lastSavedExploreElements}
+                </Box>
+              </Box> */}
+            {/* </Box> */}
+            
+            {/* 移动设备提示 */}
+            {/* {(isMobile || isTablet) && (
+              <Box
+                sx={{
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  bgcolor: 'warning.light',
+                  color: 'warning.contrastText',
+                  p: 2,
+                  borderRadius: 2,
+                  zIndex: 1000,
+                  textAlign: 'center',
+                  maxWidth: '90vw',
+                  boxShadow: 3,
+                  // 移动设备特定样式
+                  ...(isTablet && {
+                    fontSize: '1.1rem',
+                    p: 3,
+                    maxWidth: '80vw',
+                  }),
+                  ...(isMobile && {
+                    fontSize: '0.9rem',
+                    p: 1.5,
+                    maxWidth: '95vw',
+                  }),
+                }}
+              >
+                <Typography variant="h6" gutterBottom>
+                  📱 移动设备提示
+                </Typography>
+                <Typography variant="body2">
+                  {isTablet ? 'iPad' : '手机'} 用户请注意：
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  • 白板功能在触摸设备上可能有限制
+                </Typography>
+                <Typography variant="body2">
+                  • 建议使用手指或触控笔进行绘制
+                </Typography>
+                <Typography variant="body2">
+                  • 如果遇到问题，请尝试刷新页面
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => window.location.reload()}
+                  sx={{ mt: 2 }}
+                >
+                  刷新页面
+                </Button>
+              </Box>
+            )} */}
+    
+            {/* 画布区域内不再渲染 StoryPlayer；仅在探索模式渲染 ExploreMode */}
+            {mode !== 'story' && (
+              <ExploreMode 
+                onCheck={onCheck}
+                onNextDraw={onNextDraw}
+                notes={notes}
+                containerRef={rightPaneRef}
+                isLeftPanelCollapsed={isLeftPanelCollapsed}
+              />
+            )}
+    
+            {/* AI 新增元素闪烁动画层（仅显示 1.2s） */}
+            {aiFlash && excalidrawAPI && (
+              <Box
+                sx={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  zIndex: 42, pointerEvents: 'none',
+                  '@keyframes aiPulse': {
+                    '0%': { opacity: 0, transform: 'scale(0.98)' },
+                    '15%': { opacity: 1, transform: 'scale(1)' },
+                    '100%': { opacity: 0, transform: 'scale(1)' },
+                  },
+                }}
+              >
+                {(() => {
+                  const app = excalidrawAPI.getAppState?.() as any;
+                  const scrollX = (app && app.scrollX) || 0;
+                  const scrollY = (app && app.scrollY) || 0;
+                  const zoom = (app && (app.zoom?.value ?? app.zoom)) || 1;
+                  const { width, height } = aiFlash.canvas;
+                  const { x: offX, y: offY } = aiFlash.offset;
+                  const toScene = (xn: number, yn: number) => ({ x: offX + xn * width, y: offY + yn * height });
+                  const bbox = {
+                    top: (offY - scrollY) * zoom,
+                    left: (offX - scrollX) * zoom,
+                    width: width * zoom,
+                    height: height * zoom,
+                  };
+                  return (
+                    <svg
+                      width={bbox.width}
+                      height={bbox.height}
+                      viewBox={`0 0 ${width} ${height}`}
+                      style={{ position: 'absolute', top: bbox.top, left: bbox.left, filter: 'drop-shadow(0 0 6px rgba(0,200,0,0.6))', animation: 'aiPulse 1200ms ease-out both' }}
+                    >
+                      <defs>
+                        <marker id="ai-flash-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 z" fill="#00c853" />
+                        </marker>
+                      </defs>
+                      {aiFlash.elements.map((el: any, idx: number) => {
+                        const stroke = el?.style?.strokeColor || '#00c853';
+                        const fill = el?.style?.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : 'none';
+                        const sw = Math.max(2, (el?.style?.strokeWidth ?? 2) + 1);
+                        const dash = el?.style?.strokeStyle === 'dashed' ? '6,4' : el?.style?.strokeStyle === 'dotted' ? '2,4' : undefined;
+                        if (el.type === 'rectangle' || el.type === 'image') {
+                          const p = toScene(el.x_norm, el.y_norm);
+                          const w = Math.max(1, el.w_norm * width);
+                          const h = Math.max(1, el.h_norm * height);
+                          return <rect key={idx} x={p.x - offX} y={p.y - offY} width={w} height={h} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'ellipse') {
+                          const p = toScene(el.x_norm, el.y_norm);
+                          const w = Math.max(1, el.w_norm * width);
+                          const h = Math.max(1, el.h_norm * height);
+                          return <ellipse key={idx} cx={p.x - offX + w / 2} cy={p.y - offY + h / 2} rx={w / 2} ry={h / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'diamond') {
+                          const p = toScene(el.x_norm, el.y_norm);
+                          const w = Math.max(1, el.w_norm * width);
+                          const h = Math.max(1, el.h_norm * height);
+                          const pts = [
+                            [p.x - offX + w / 2, p.y - offY],
+                            [p.x - offX + w, p.y - offY + h / 2],
+                            [p.x - offX + w / 2, p.y - offY + h],
+                            [p.x - offX, p.y - offY + h / 2],
+                          ];
+                          return <polygon key={idx} points={pts.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'arrow') {
+                          const s = toScene(el.x_norm, el.y_norm);
+                          const e = toScene(el.end_x_norm, el.end_y_norm);
+                          return <line key={idx} x1={s.x - offX} y1={s.y - offY} x2={e.x - offX} y2={e.y - offY} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd="url(#ai-flash-arrow)" />;
+                        }
+                        if (el.type === 'line' || el.type === 'draw') {
+                          const pts = (el.points || []).map((pt: any) => {
+                            const p = toScene(pt.x_norm, pt.y_norm);
+                            return `${p.x - offX},${p.y - offY}`;
+                          }).join(' ');
+                          return <polyline key={idx} points={pts} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'text') {
+                          const p = toScene(el.x_norm, el.y_norm);
+                          return <text key={idx} x={p.x - offX} y={p.y - offY} fontSize={(el.fontSize ?? 20)} fill={stroke} opacity={0.9}>{el.text}</text>;
+                        }
+                        return null;
+                      })}
+                    </svg>
+                  );
+                })()}
+              </Box>
+             )}
+    
+             {/* AI Ghost 叠加层（持久显示，直到用户开始绘制或切换） */}
+             {aiGhost && excalidrawAPI && (
+              <Box
+                sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 41, pointerEvents: 'none' }}
+              >
+                {(() => {
+                  const { width, height } = aiGhost.canvas;
+                  const bbox = { top: 12, left: 12, width, height };
+                  const toLocal = (xn: number, yn: number) => ({ x: xn * width, y: yn * height });
+                  return (
+                    <svg
+                      width={bbox.width}
+                      height={bbox.height}
+                      viewBox={`0 0 ${width} ${height}`}
+                      style={{ position: 'absolute', top: bbox.top, left: bbox.left, opacity: 0.5 }}
+                    >
+                      <defs>
+                        <marker id="ai-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 z" fill="#00c853" />
+                        </marker>
+                      </defs>
+                      {aiGhost.elements.map((el: any, idx: number) => {
+                        const stroke = el?.style?.strokeColor || '#00c853';
+                        const fill = el?.style?.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : 'none';
+                        const sw = Math.max(2, (el?.style?.strokeWidth ?? 2));
+                        const dash = '6,4';
+                        if (el.type === 'rectangle' || el.type === 'image') {
+                          const p = toLocal(el.x_norm, el.y_norm);
+                          const w = Math.max(1, el.w_norm * width);
+                          const h = Math.max(1, el.h_norm * height);
+                          return <rect key={idx} x={p.x} y={p.y} width={w} height={h} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'ellipse') {
+                          const p = toLocal(el.x_norm, el.y_norm);
+                          const w = Math.max(1, el.w_norm * width);
+                          const h = Math.max(1, el.h_norm * height);
+                          return <ellipse key={idx} cx={p.x + w / 2} cy={p.y + h / 2} rx={w / 2} ry={h / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'diamond') {
+                          const p = toLocal(el.x_norm, el.y_norm);
+                          const w = Math.max(1, el.w_norm * width);
+                          const h = Math.max(1, el.h_norm * height);
+                          const pts = [
+                            [p.x + w / 2, p.y],
+                            [p.x + w, p.y + h / 2],
+                            [p.x + w / 2, p.y + h],
+                            [p.x, p.y + h / 2],
+                          ];
+                          return <polygon key={idx} points={pts.map(pt => pt.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'arrow') {
+                          const s = toLocal(el.x_norm, el.y_norm);
+                          const e = toLocal(el.end_x_norm, el.end_y_norm);
+                          return <line key={idx} x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd="url(#ai-ghost-arrow)" />;
+                        }
+                        if (el.type === 'line' || el.type === 'draw') {
+                          const pts = (el.points || []).map((pt: any) => {
+                            const p = toLocal(pt.x_norm, pt.y_norm);
+                            return `${p.x},${p.y}`;
+                          }).join(' ');
+                          return <polyline key={idx} points={pts} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />;
+                        }
+                        if (el.type === 'text') {
+                          const p = toLocal(el.x_norm, el.y_norm);
+                          return <text key={idx} x={p.x} y={p.y} fontSize={(el.fontSize ?? 20)} fill={stroke} opacity={0.9}>{el.text}</text>;
+                        }
+                        return null;
+                      })}
+                    </svg>
+                  );
+                })()}
+              </Box>
+             )}
+    
+    
+    
+            {/* {excalidrawAPI && (
+              <StoryPlayer
+                steps={steps}
+                excalidrawAPI={excalidrawAPI}
+                onStepChange={(stepText, index) => {
+                  setCurrentStepText(stepText);
+                  setCurrentStepIndex(index);
+                  // 加载保存的步骤内容
+                  const savedStep = savedSteps.find(step => step.index === index);
+                  if (savedStep) {
+                    excalidrawAPI.updateScene({
+                      elements: Array.from(savedStep.elements) as any[],
+                      files: savedStep.files,
+                    });
+                  }
+                }}
+              />
+            )} */}
+              </div>
+            </div>
+          </div>
+    
+          {/* 垂直分割线（可拖拽） — 统一白底+发丝线+竖向点 grip 样式 */}
+          {/* 隐形命中区：提升起拖体验，不改变视觉 */}
+          <div
+            aria-hidden
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); }}
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); }}
+            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); }}
+            style={{ position: 'absolute', top: 57, bottom: 0, left: `${leftPct}%`, transform: 'translateX(-28px)', width: 56, background: 'transparent', cursor: 'col-resize', zIndex: 1500, pointerEvents: 'auto' }}
+          />
 
-         {/* AI Ghost 叠加层（持久显示，直到用户开始绘制或切换） */}
-         {aiGhost && excalidrawAPI && (
-          <Box
-            sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 41, pointerEvents: 'none' }}
+          {/* 可见手柄（白底 8px + 左右发丝线 #ddd + 竖向 3px 小点） */}
+          <div
+            aria-hidden
+            onMouseDown={() => setIsResizing(true)}
+            onPointerDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+            onTouchStart={(e) => { e.preventDefault(); setIsResizing(true); }}
+            onPointerMove={(e) => {
+              if (!isResizing || !containerRef.current) return;
+              const rect = containerRef.current.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+              setLeftPct(next);
+            }}
+            onTouchMove={(e) => {
+              if (!isResizing || !containerRef.current) return;
+              const rect = containerRef.current.getBoundingClientRect();
+              const touch = e.touches && e.touches[0];
+              if (!touch) return;
+              const x = touch.clientX - rect.left;
+              const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+              setLeftPct(next);
+            }}
+            style={{ position: 'absolute', top: 57, bottom: 0, left: `calc(${leftPct}% - 4px)`, width: 8, cursor: 'col-resize', zIndex: 2000, touchAction: 'none', background: '#fff', boxShadow: 'inset 1px 0 0 #ddd, inset -1px 0 0 #ddd' }}
           >
-            {(() => {
-              const { width, height } = aiGhost.canvas;
-              const bbox = { top: 12, left: 12, width, height };
-              const toLocal = (xn: number, yn: number) => ({ x: xn * width, y: yn * height });
-              return (
-                <svg
-                  width={bbox.width}
-                  height={bbox.height}
-                  viewBox={`0 0 ${width} ${height}`}
-                  style={{ position: 'absolute', top: bbox.top, left: bbox.left, opacity: 0.5 }}
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                display: 'grid',
+                gridTemplateRows: 'repeat(5, 3px)',
+                rowGap: 2,
+              }}
+            >
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: '#ccc' }} />
+              ))}
+            </div>
+          </div>
+    
+          {/* 右侧：问题/算法（上栏 Tab 切换） + 下栏 Story 步骤 */}
+          <div
+            className="lc-right"
+            ref={rightSplitRef}
+            style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #eee', background: '#fff' }}
+          >
+            {/* 上栏（Tab 切换）：问题 / 直觉 / 算法 */}
+            <Box sx={{ flex: `0 0 ${topPct}%`, minHeight: 0, borderBottom: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>
+                <Tabs
+                  value={rightTopTab}
+                  onChange={(_, v) => setRightTopTab(v)}
+                  aria-label="problem algorithm tabs"
                 >
-                  <defs>
-                    <marker id="ai-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-                      <path d="M0,0 L10,5 L0,10 z" fill="#00c853" />
-                    </marker>
-                  </defs>
-                  {aiGhost.elements.map((el: any, idx: number) => {
-                    const stroke = el?.style?.strokeColor || '#00c853';
-                    const fill = el?.style?.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : 'none';
-                    const sw = Math.max(2, (el?.style?.strokeWidth ?? 2));
-                    const dash = '6,4';
-                    if (el.type === 'rectangle' || el.type === 'image') {
-                      const p = toLocal(el.x_norm, el.y_norm);
-                      const w = Math.max(1, el.w_norm * width);
-                      const h = Math.max(1, el.h_norm * height);
-                      return <rect key={idx} x={p.x} y={p.y} width={w} height={h} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
-                    }
-                    if (el.type === 'ellipse') {
-                      const p = toLocal(el.x_norm, el.y_norm);
-                      const w = Math.max(1, el.w_norm * width);
-                      const h = Math.max(1, el.h_norm * height);
-                      return <ellipse key={idx} cx={p.x + w / 2} cy={p.y + h / 2} rx={w / 2} ry={h / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
-                    }
-                    if (el.type === 'diamond') {
-                      const p = toLocal(el.x_norm, el.y_norm);
-                      const w = Math.max(1, el.w_norm * width);
-                      const h = Math.max(1, el.h_norm * height);
-                      const pts = [
-                        [p.x + w / 2, p.y],
-                        [p.x + w, p.y + h / 2],
-                        [p.x + w / 2, p.y + h],
-                        [p.x, p.y + h / 2],
-                      ];
-                      return <polygon key={idx} points={pts.map(pt => pt.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />;
-                    }
-                    if (el.type === 'arrow') {
-                      const s = toLocal(el.x_norm, el.y_norm);
-                      const e = toLocal(el.end_x_norm, el.end_y_norm);
-                      return <line key={idx} x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd="url(#ai-ghost-arrow)" />;
-                    }
-                    if (el.type === 'line' || el.type === 'draw') {
-                      const pts = (el.points || []).map((pt: any) => {
-                        const p = toLocal(pt.x_norm, pt.y_norm);
-                        return `${p.x},${p.y}`;
-                      }).join(' ');
-                      return <polyline key={idx} points={pts} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} />;
-                    }
-                    if (el.type === 'text') {
-                      const p = toLocal(el.x_norm, el.y_norm);
-                      return <text key={idx} x={p.x} y={p.y} fontSize={(el.fontSize ?? 20)} fill={stroke} opacity={0.9}>{el.text}</text>;
-                    }
-                    return null;
-                  })}
-                </svg>
-              );
-            })()}
+                  <Tab label={zh ? '问题' : 'Problem'} value="problem" />
+                  <Tab label={zh ? '直觉' : 'Intuition'} value="intuition" />
+                  <Tab label={zh ? '算法' : 'Algorithm'} value="algorithm" />
+                </Tabs>
+              </Box>
+              <Box sx={{ p: 1.5, overflow: 'auto', flex: 1, '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-track': { bgcolor: 'rgba(0,0,0,0.1)' }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(165, 175, 76, 0.3)', borderRadius: '2px' } }}>
+                {rightTopTab === 'problem' ? (
+                  <>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#8b7355' }}>
+                    {zh ? '📋 跳跃游戏' : '📋 Jump Game'}
+                    </Typography>
+                    <Typography variant="body1" sx={{ lineHeight: 1.6, mb: 2 }}>
+                    {zh ? (
+                    <>
+                      给你一个非负整数数组 nums，你最初位于数组的 <Box component="span" sx={{ fontWeight: 700, color: '#8b7355' }}>第一个下标</Box>。数组中的每个元素代表你在该位置可以跳跃的最大长度。
+                      <br /><br />
+                      判断你是否能够到达最后一个下标，如果可以，返回 true；否则，返回 false。
+                    </>
+                  ) : (
+                    <>
+                      You are given a non-negative integer array nums. You are initially positioned at the array's <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>first index</Box>, and each element represents your maximum jump length at that position.
+                      <br /><br />
+                      Return true if you can reach the last index, or false otherwise.
+                    </>
+                  )}
+                    </Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                      {zh ? ' 示例' : 'Example'}
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontFamily: 'monospace', lineHeight: 1.8 }}>
+                    {zh ? '输入: [3, 2, 1, 0, 4]' : 'Input: [3, 2, 1, 0, 4]'}
+     
+                    </Typography>
+                  </>
+                ) : rightTopTab === 'intuition' ? (
+                  <>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#6b7c32' }}>
+                      {zh ? '🧠 直觉' : '🧠 Intuition'}
+                    </Typography>
+                    <Typography variant="body1" sx={{ lineHeight: 1.6, mb: 2 }}>
+                    {zh
+                    ? '我们可以用贪心的方法解决这个问题。设想一下，对于数组中的任意一个位置 y，我们如何判断它是否可以到达？'
+                    : "We can solve this with a greedy approach. Consider any position y in the array: how can we determine whether it's reachable?"}
+                    </Typography>
+                    {/* <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, mb: 2, border: '1px solid #e0e0e0' }}>
+                      <Typography component="pre" variant="body2" sx={{ fontFamily: 'monospace', lineHeight: 1.8, whiteSpace: 'pre-wrap', m: 0 }}>
+                        {zh
+                          ? 'list1[0] + merge(list1[1:], list2)  if list1[0] < list2[0]\\nlist2[0] + merge(list1, list2[1:])  otherwise'
+                          : 'list1[0] + merge(list1[1:], list2)  if list1[0] < list2[0]\\nlist2[0] + merge(list1, list2[1:])  otherwise'}
+                      </Typography>
+                    </Box> */}
+                    <Typography variant="body1" sx={{ lineHeight: 1.6, fontStyle: 'italic' }}>
+                    {zh ? (
+                    <>根据题目的描述，只要存在一个位置 x，它本身可以到达，并且它跳跃的最大长度为 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x+nums[x]</Box>，这个值大于等于 y，即 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x+nums[x]≥y</Box>，那么位置 y 也可以到达。</>
+                  ) : (
+                    <>If there exists a reachable position x whose maximum jump reaches at least y — that is, if <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x + nums[x] ≥ y</Box> — then y is also reachable.</>
+                  )}
+                    </Typography>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#6b7c32' }}>
+                      {zh ? '✅ 算法' : '✅ Algorithm'}
+                    </Typography>
+                    <Box sx={{ 
+                        // bgcolor: 'rgba(76, 175, 80, 0.05)', 
+                        p: 2, 
+                        borderRadius: 2, 
+                        // border: '1px solid rgba(76, 175, 80, 0.15)'
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem',
+                          mb: 1.5
+                        }}>
+                          {zh ? (
+                            <>1. 依次遍历数组中的每一个位置，并实时维护 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>最远可以到达的位置</Box></>
+                          ) : (
+                            <>1. Iterate through the array while maintaining the <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>farthest position we can reach</Box></>
+                          )}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem',
+                          mb: 1.5
+                        }}>
+                          {zh ? '2. 对于当前遍历到的位置 x，如果它在最远可以到达的位置的范围内，那么我们就可以从起点通过若干次跳跃到达该位置' : '2. For the current index x, if it lies within the farthest reachable range, then we can get to x from the start with some number of jumps'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem',
+                          mb: 1.5
+                        }}>
+                          {zh ? (
+                            <>3. 用 <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>x+nums[x]</Box> 更新最远可以到达的位置</>
+                          ) : (
+                            <>3. Update the farthest reach to <Box component="span" sx={{ fontWeight: 700, color: '#2e7d32' }}>max(farthest, x + nums[x])</Box></>
+                          )}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          lineHeight: 1.7, 
+                          color: '#333',
+                          fontSize: '0.9rem'
+                        }}>
+                          {zh ? '4. 如果最远可以到达的位置 ≥ 数组最后一个位置，返回 True；否则返回 False' : '4. If the farthest reachable position ≥ last index, return True; otherwise return False'}
+                </Typography>
+              </Box>
+                  </>
+                )}
+              </Box>
+            </Box>
+    
+            {/* 水平分割线（可拖拽） - 统一白底+发丝线+点 grip 样式 */}
+            <div
+              className="lc-resizer-h"
+              onMouseDown={() => setIsTopResizing(true)}
+              onPointerDown={(e) => { e.preventDefault(); setIsTopResizing(true); }}
+              onTouchStart={(e) => { e.preventDefault(); setIsTopResizing(true); }}
+              style={{ height: 8, cursor: 'row-resize', background: '#fff', width: '100%', touchAction: 'none', position: 'relative', zIndex: 1400, userSelect: 'none', boxShadow: 'inset 0 1px 0 #ddd, inset 0 -1px 0 #ddd' }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(5, 3px)',
+                  columnGap: 2,
+                }}
+              >
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: '#ccc' }} />
+                ))}
+              </div>
+            </div>
+    
+            {/* 下栏：Story 步骤（内嵌，不再悬浮在画布） */}
+            <Box sx={{ flex: `1 1 ${100 - topPct}%`, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ p: 1, overflow: 'auto', flex: 1 }}>
+                {mode === 'story' && (
+                  <StoryPlayer 
+                    steps={steps} 
+                    onStepChange={handleStepChange} 
+                    stepStatuses={stepStatuses}
+                    setStepStatuses={setStepStatuses}
+                    onCheck={onCheck}
+                    onNextDraw={onNextDraw}
+                    notes={notes}
+                    isNotesOpen={isNotesOpen}
+                    stepNotes={stepNotes}
+                    currentStepIndex={currentStepIndex}
+                    stepChecks={stepChecks}
+                    containerRef={rightPaneRef}
+                    titles={titles_greed}
+                    hints={hints_greed}
+                    isLeftPanelCollapsed={isLeftPanelCollapsed}
+                    zh={zh}
+                    inline
+                  />
+                )}
+              </Box>
+            </Box>
+          </div>
           </Box>
-         )}
-
-        </div>
-      </div>
-      {/* Notes功能已集成到Story卡片中，不再需要单独的Modal */}
-    </div>
-  );
+          {/* Notes功能已集成到Story卡片中，不再需要单独的Modal */}
+        </main>
+      );
 }

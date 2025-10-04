@@ -1,9 +1,16 @@
 import dynamic from 'next/dynamic';
 import { useState, useRef, useEffect, useCallback } from 'react';
 // import StoryPlayer from '../components/StoryPlayer';
+
+type StepScene = {
+  elements: readonly any[];
+  files: any;
+  appState?: any;
+};
+
 // 顶部先引入 MUI 组件
-import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon } from '@mui/material'
-import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book } from '@mui/icons-material'
+import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon, CircularProgress } from '@mui/material'
+import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book, PlayArrow, CloudUpload } from '@mui/icons-material'
 // 追加这些组件
 import { Paper, Divider, RadioGroup, Radio, FormControlLabel, TextField, Switch } from '@mui/material';
 
@@ -50,11 +57,6 @@ const Excalidraw = dynamic(
 // const MarkdownWithDrawing = dynamic(() => import('../../components/MarkdownWithDrawing'), { ssr: false });
 // const SVGWhiteboard = dynamic(() => import('../components/SVGWhiteboard'), { ssr: false });
 
-// type StepScene = {
-//   elements: readonly any[];
-//   files: any;
-//   appState?: any;
-// };
 // type MCQ = {
 //     id: string;
 //     promptEN: string;
@@ -167,104 +169,49 @@ type FillBlankQ = {
   footerZH: string;
 };
 
-// Stage 1 · Algorithm Logic (Abstract Concepts)
+// 题目定义
 const MCQS: MCQ[] = [
   {
-    id: 'q1',
-    promptEN:
-      'Q1 · Multiple Choice\nWhat is the core greedy logic for solving Jump Game II?',
-    promptZH:
-      'Q1 · 单选题\n解决 Jump Game II 的核心贪心思路是什么？',
-    options: [
-      {
-        key: 'A',
-        textEN: 'At each step, always jump to the position with the largest nums[i] value',
-        textZH: '每一步跳到 nums[i] 最大的位置',
-      },
-      {
-        key: 'B',
-        textEN:
-          'Expand the current reachable range, and once you reach the end of this range, increase the jump count and set the new end to the farthest position found',
-        textZH:
-          '扩展当前可达区间；当扫描到区间末端时增加步数，并把新区间末端设为目前能到达的最远位置',
-      },
-      {
-        key: 'C',
-        textEN: 'Use DFS to try all paths and pick the minimum',
-        textZH: '用 DFS 穷举所有路径再取最小',
-      },
-      {
-        key: 'D',
-        textEN: 'Use dynamic programming with O(n²) transitions',
-        textZH: '用 O(n²) 的动态规划转移',
-      },
-    ],
-  },
-  {
     id: 'q2',
-    promptEN:
-      'Q2 · True / False\nIf an index is already reachable in j jumps, there is no need to consider reaching it again in j+1 or more jumps.',
-    promptZH:
-      'Q2 · 判断题\n若某下标已在 j 次跳跃内可达，就没必要再考虑在 j+1 次或更多次跳跃后再到达它。',
+    promptEN: 'Q2 · The core characteristic of greedy algorithm is',
+    promptZH: 'Q2 · 贪心算法的核心特征是',
     options: [
-      { key: 'T', textEN: 'True', textZH: '对' },
-      { key: 'F', textEN: 'False', textZH: '错' },
+      { key: 'A', textEN: 'Always choose the current optimal solution', textZH: '总是选择当前最优解' },
+      { key: 'B', textEN: 'Backtrack and try all possibilities', textZH: '回溯尝试所有可能' },
+      { key: 'C', textEN: 'Solve subproblems in stages', textZH: '分阶段解决子问题' },
+      { key: 'D', textEN: 'Always find the optimal solution', textZH: '总能找到最优解' },
     ],
   },
   {
-    id: 'q4',
-    promptEN:
-      'Q4 · Multiple Choice\nInput: nums = [2,3,1,1,4]. What is the minimum number of jumps to reach the last index?',
-    promptZH:
-      'Q4 · 单选题\n输入：nums = [2,3,1,1,4]。到达最后一个下标的最少跳跃次数是多少？',
+    id: 'q3',
+    promptEN: 'Q3 · True or False\nGreedy algorithm can always achieve global optimal solution by choosing the current optimal solution at each step.',
+    promptZH: 'Q3 · 判断正误\n贪心算法通过每一步选择当前最优解，从而一定能获得全局最优解。',
     options: [
-      { key: 'A', textEN: '1', textZH: '1' },
-      { key: 'B', textEN: '2', textZH: '2' },
-      { key: 'C', textEN: '3', textZH: '3' },
-      { key: 'D', textEN: '4', textZH: '4' },
+      { key: 'T', textEN: 'True', textZH: '正确' },
+      { key: 'F', textEN: 'False', textZH: '错误' },
     ],
   },
 ];
 
-// Stage 2 · Step-by-Step Process Flow
-const ORDERING_Q: OrderingQ = {
-  id: 'q3',
-  promptEN:
-    'Q3 · Ordering\nArrange the following steps into the correct greedy process:',
-  promptZH:
-    'Q3 · 排序题\n将以下步骤按正确的贪心流程排序：',
-  stepsEN: [
-    'Initialize jumps = 0, end = 0, farthest = 0',
-    'Update farthest = max(farthest, i + nums[i]) while scanning indices in the current range',
-    'If i == end, increase jumps and update end = farthest',
-    'Stop and return jumps when end >= n - 1',
-  ],
-  stepsZH: [
-    '初始化 jumps = 0，end = 0，farthest = 0',
-    '在当前扫描区间内更新 farthest = max(farthest, i + nums[i])',
-    '当 i == end 时，jumps++，并将 end = farthest',
-    '当 end ≥ n - 1 时停止并返回 jumps',
-  ],
-};
-
-// Stage 3 · Code Implementation & Structure
+// Q1 填空题
 const FILL_Q: FillBlankQ = {
-  id: 'q5',
-  promptEN: 'Q5 · Fill in the Blanks (C++):',
-  promptZH: 'Q5 · 填空（C++）：',
+  id: 'q1',
+  promptEN: 'Q1 · Complete the greedy solution skeleton:',
+  promptZH: 'Q1 · 完成贪心解法框架：',
   blanks: [
-    { id: 'b1', placeholder: 'jumps++' },
-    { id: 'b2', placeholder: 'end = farthest' },
+    { id: 'b1', placeholder: 'farthest = max(farthest, i + nums[i])' },
+    { id: 'b2', placeholder: 'jumps++' },
+    { id: 'b3', placeholder: 'end = farthest' },
   ],
   footerEN:
     'int jump(vector<int>& nums) {\n' +
     '    int n = nums.size();\n' +
     '    int jumps = 0, end = 0, farthest = 0;\n' +
     '    for (int i = 0; i < n - 1; ++i) {\n' +
-    '        farthest = max(farthest, i + nums[i]);\n' +
+    '        _______;   // (1)\n' +
     '        if (i == end) {\n' +
-    '            _______;   // (1)\n' +
     '            _______;   // (2)\n' +
+    '            _______;   // (3)\n' +
     '        }\n' +
     '    }\n' +
     '    return jumps;\n' +
@@ -274,28 +221,53 @@ const FILL_Q: FillBlankQ = {
     '    int n = nums.size();\n' +
     '    int jumps = 0, end = 0, farthest = 0;\n' +
     '    for (int i = 0; i < n - 1; ++i) {\n' +
-    '        farthest = max(farthest, i + nums[i]);\n' +
+    '        _______;   // (1)\n' +
     '        if (i == end) {\n' +
-    '            _______;   // (1)\n' +
     '            _______;   // (2)\n' +
+    '            _______;   // (3)\n' +
     '        }\n' +
     '    }\n' +
     '    return jumps;\n' +
     '}',
 };
 
-// Q6 · Parsons Problem (Code Ordering)
-const PARSONS_LINES = [
-  'int jump(vector<int>& nums) {',
-  '    int n = nums.size();',
-  '    int jumps = 0, end = 0, farthest = 0;',
-  '    for (int i = 0; i < n - 1; ++i) {',
-  '        farthest = max(farthest, i + nums[i]);',
-  '        if (i == end) { jumps++; end = farthest; }',
-  '    }',
-  '    return jumps;',
-  '}',
-];
+// Q4 填空题 - 分发饼干
+const FILL_Q4: FillBlankQ = {
+  id: 'q4',
+  promptEN: 'Q4 · Fill in the blank\nSuppose there are multiple children, array g stores all children\'s appetite values. There are multiple cookies, array s stores all cookie sizes. Xiao Yang distributes cookies to children, each child can get at most one cookie. A child can be satisfied only when the cookie size is greater than or equal to the child\'s appetite. Xiao Yang\'s goal is to satisfy as many children as possible, so he plans to use a greedy algorithm to find the number of children that can be satisfied. What code should be filled in the blank?',
+  promptZH: 'Q4 · 填空题\n假设有多个孩子，数组 g 保存所有孩子的胃口值。有多块饼干，数组 s 保存所有饼干的尺寸。小杨给孩子们发饼干，每个孩子最多只能给一块饼干。饼干的尺寸大于等于孩子的胃口时，孩子才能得到满足。小杨的目标是尽可能满足越多数量的孩子，因此打算采用贪心算法来找出能满足的孩子的数目，则横线上应填写的代码为',
+  blanks: [
+    { id: 'b4', placeholder: '' },
+  ],
+  footerEN:
+    'int cooki4children(vector<int>& g, vector<int>& s) {\n' +
+    '    sort(g.begin(), g.end());\n' +
+    '    sort(s.begin(), s.end());\n' +
+    '    int index = s.size() - 1; // 饼干数组下标\n' +
+    '    int result = 0;\n' +
+    '    for (int i = g.size() - 1; i >= 0; i--) {\n' +
+    '        if (index >= 0 && s[index] >= g[i]) {\n' +
+    '            _______; // 在此处填入代码\n' +
+    '        }\n' +
+    '    }\n' +
+    '    return result;\n' +
+    '}',
+  footerZH:
+    'int cooki4children(vector<int>& g, vector<int>& s) {\n' +
+    '    sort(g.begin(), g.end());\n' +
+    '    sort(s.begin(), s.end());\n' +
+    '    int index = s.size() - 1; // 饼干数组下标\n' +
+    '    int result = 0;\n' +
+    '    for (int i = g.size() - 1; i >= 0; i--) {\n' +
+    '        if (index >= 0 && s[index] >= g[i]) {\n' +
+    '            _______; // 在此处填入代码\n' +
+    '        }\n' +
+    '    }\n' +
+    '    return result;\n' +
+    '}',
+};
+
+
 
   // ==== Small UI blocks (no correctness/answers shown) ====
   function MCQBlock({ q, zh }: { q: MCQ; zh: boolean }) {
@@ -368,14 +340,34 @@ const PARSONS_LINES = [
   function FillBlankBlock({ q, zh }: { q: FillBlankQ; zh: boolean }) {
     const [b1, setB1] = useState('');
     const [b2, setB2] = useState('');
+    const [b3, setB3] = useState('');
     return (
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography fontWeight={700} gutterBottom>
           {zh ? q.promptZH : q.promptEN}
         </Typography>
         <Stack gap={1}>
-          <TextField size="small" label={zh ? '空 1' : 'Blank 1'} placeholder={q.blanks[0].placeholder} value={b1} onChange={(e) => setB1(e.target.value)} />
-          <TextField size="small" label={zh ? '空 2' : 'Blank 2'} placeholder={q.blanks[1].placeholder} value={b2} onChange={(e) => setB2(e.target.value)} />
+          <TextField size="small" label={zh ? '空 1' : 'Blank 1'} placeholder={''} value={b1} onChange={(e) => setB1(e.target.value)} />
+          <TextField size="small" label={zh ? '空 2' : 'Blank 2'} placeholder={''} value={b2} onChange={(e) => setB2(e.target.value)} />
+          <TextField size="small" label={zh ? '空 3' : 'Blank 3'} placeholder={''} value={b3} onChange={(e) => setB3(e.target.value)} />
+          <Paper variant="outlined" sx={{ p: 1, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13 }}>
+            {zh ? q.footerZH : q.footerEN}
+          </Paper>
+        </Stack>
+      </Paper>
+    );
+  }
+
+  // Q4专用填空题组件 - 只有1个空
+  function FillBlankBlockQ4({ q, zh }: { q: FillBlankQ; zh: boolean }) {
+    const [b4, setB4] = useState('');
+    return (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography fontWeight={700} gutterBottom>
+          {zh ? q.promptZH : q.promptEN}
+        </Typography>
+        <Stack gap={1}>
+          <TextField size="small" label={zh ? '填空' : 'Fill in the blank'} placeholder={''} value={b4} onChange={(e) => setB4(e.target.value)} />
           <Paper variant="outlined" sx={{ p: 1, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13 }}>
             {zh ? q.footerZH : q.footerEN}
           </Paper>
@@ -463,7 +455,7 @@ export default function Home() {
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
   const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
     // 语言切换（EN/中文）
-const [zh, setZh] = useState(false);
+const [zh, setZh] = useState(true);
   // 自定义插入模式（点击画布插入）
   const [pendingInsertTool, setPendingInsertTool] = useState<'rectangle' | 'ellipse' | null>(null);
   const rightPaneRef = useRef<HTMLDivElement | null>(null);
@@ -552,6 +544,29 @@ const [zh, setZh] = useState(false);
   const isModeSwitching = useRef(false);
   // 故事模式算法选择：greed（贪心算法）
   const [storyAlgorithm, setStoryAlgorithm] = useState<'greed'>('greed');
+  // 根容器引用（与 animation 一致）
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // 顶部操作按钮 loading 状态
+  const [topLoadingCheck, setTopLoadingCheck] = useState(false);
+  const [topLoadingHint, setTopLoadingHint] = useState(false);
+
+  // 顶部按钮事件封装（与 index/drawing 保持一致）
+  const handleTopCheck = async () => {
+    try {
+      setTopLoadingCheck(true);
+      await onCheck();
+    } finally {
+      setTopLoadingCheck(false);
+    }
+  };
+  const handleTopHint = async () => {
+    try {
+      setTopLoadingHint(true);
+      await onNextDraw();
+    } finally {
+      setTopLoadingHint(false);
+    }
+  };
   
   const titles_greed = [
     '贪心选择',
@@ -2096,6 +2111,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
           transition: 'width 0.3s ease, border-right 0.3s ease',
           position: 'relative',
           overflow: 'hidden',
+          pt: '56px',
         }}
       >
         {/* 收起/展开按钮 */}
@@ -2104,7 +2120,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
           sx={{
             position: 'fixed',
             left: isNavCollapsed ? 8 : 72,
-            top: 20,
+            top: 76,
             bgcolor: 'background.paper',
             border: 1,
             borderColor: 'divider',
@@ -2152,7 +2168,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
             /> */}
             
             
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography
                 variant="body2"
                 sx={{
@@ -2227,10 +2243,10 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
                   测试
                 </Button>
               </Box>
-            </Box>
+            </Box> */}
 
             {/* 组2 */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography
                 variant="body2"
                 sx={{
@@ -2305,7 +2321,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
                   测试
                 </Button>
               </Box>
-            </Box>
+            </Box> */}
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography
@@ -2386,62 +2402,177 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
             
           </Box>
         </Box>
+        {/* <Box sx={{ 
+          p: 1, 
+          borderTop: 1, 
+          borderColor: 'divider',
+          opacity: isNavCollapsed ? 0 : 1,
+          transition: 'opacity 0.3s ease',
+        }}>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center',
+            gap: 0.5
+          }}>
+            <Typography variant="body2" sx={{ 
+              fontSize: '0.75rem', 
+              color: '#666',
+              textAlign: 'center'
+            }}>
+              EN
+              </Typography>
+            <Switch
+              checked={zh}
+              onChange={(_: any, checked: boolean) => {
+                if (checked !== zh) setZh(checked);
+              }}
+              size="small"
+              sx={{
+                '& .MuiSwitch-thumb': {
+                  width: 16,
+                  height: 16,
+                },
+                '& .MuiSwitch-track': {
+                  height: 12,
+                  borderRadius: 6,
+                },
+              }}
+            />
+            <Typography variant="body2" sx={{ 
+              fontSize: '0.75rem', 
+              color: '#666',
+              textAlign: 'center'
+            }}>
+              中文
+            </Typography>
+          </Box>
+              </Box> */}
       </Box>
 
-      {/* 内容区域 */}
-      <div className="flex-1 flex">
+      {/* 顶部全局操作栏（与 animation/drawing 一致） */}
+      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, borderBottom: 1, borderColor: 'divider', bgcolor: '#fff', zIndex: 2000 }}>
+        <Box sx={{ position: 'relative', height: '100%' }}>
+          {/* 左侧：项目名 */}
+          <Box sx={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#333' }}>SketchMind</Typography>
+          </Box>
+          {/* 中间操作按钮组（本页只显示提示/检查两个按钮） */}
+          {/* <Box sx={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 2, px: 1, py: 0.5, boxShadow: 0 }}>
+            <Button
+              onClick={handleTopHint}
+              disabled={topLoadingHint}
+              sx={{ minWidth: 0, color: '#555', textTransform: 'none', '&:hover': { bgcolor: '#eeeeee' } }}
+              startIcon={topLoadingHint ? <CircularProgress size={18} /> : <PlayArrow />}
+            >
+              {zh ? 'AI 画图' : 'AI Draw'}
+            </Button>
+            <Button
+              onClick={handleTopCheck}
+              disabled={topLoadingCheck}
+              sx={{ minWidth: 0, color: 'success.main', fontWeight: 700, textTransform: 'none', '&:hover': { bgcolor: '#e8f5e9' } }}
+              startIcon={topLoadingCheck ? <CircularProgress size={18} /> : <CloudUpload sx={{ color: 'success.main' }} />}
+            >
+              {zh ? '检查步骤' : 'Check Step'}
+            </Button>
+          </Box> */}
+        </Box>
+      </Box>
+
+      {/* 顶部右侧：语言切换 */}
+      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, pointerEvents: 'none', zIndex: 2001 }}>
+        <Box sx={{ position: 'relative', height: '100%' }}>
+          <Box sx={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 0.75, pointerEvents: 'auto' }}>
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#666' }}>EN</Typography>
+            <Switch
+              checked={zh}
+              onChange={(_: any, checked: boolean) => { if (checked !== zh) setZh(checked); }}
+              size="small"
+              sx={{ '& .MuiSwitch-thumb': { width: 16, height: 16 }, '& .MuiSwitch-track': { height: 12, borderRadius: 6 } }}
+            />
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#666' }}>中文</Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* 内容区域（与 animation 一致的根容器 main） */}
+      <main
+        ref={containerRef}
+        className="lc-root"
+        style={{
+          display: 'flex',
+          width: '100%',
+          minHeight: '100svh',
+          height: 'auto',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          paddingTop: '56px',
+        }}
+      >
         {/* 左侧内容 */}
-        <div className="w-2/5 relative bg-gray-100" style={{ overflowY: 'auto', height: '100vh' }}>
+        <div className="w-2/5 relative bg-gray-100" style={{ overflowY: 'auto', height: 'calc(100vh - 56px)' }}>
           {/* ================= Recursion · Remove Linked List Elements (Testing) ================= */}
-          <Box sx={{ p: 3, pt: 0 }}>
+          <Box sx={{ p: 3, pt: 1.5 }}>
   {/* 顶部标题 + 语言切换 */}
   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
   <Typography variant="h6" sx={{ color: '#333', fontWeight: 600 }}>
   {zh ? '贪心 · 跳跃游戏 II' : 'Greedy · Jump Game II'}
 </Typography>
-    <Stack direction="row" alignItems="center" gap={1}>
-      <Typography variant="body2">EN</Typography>
-      <Switch checked={zh} onChange={(e) => setZh(e.target.checked)} />
-      <Typography variant="body2">中文</Typography>
-    </Stack>
+
   </Box>
 
   <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
   <Typography sx={{ mb: 1.5 }}>
     {zh
-      ? '给定一个非负整数数组 nums，每个元素表示从该位置可以跳的最大长度。判断能否到达数组的最后一个下标。请用贪心思路回答以下题目。'
-      : 'Given a non-negative integer array nums, each element represents your maximum jump length from that position. Determine if you can reach the last index. Answer the following using the greedy approach.'}
+      ? '给定一个长度为 n 的 0 索引整数数组 nums。初始位置在下标 0。每个元素 nums[i] 表示从索引 i 向后跳转的最大长度。换句话说，如果你在索引 i 处，你可以跳转到任意 (i + j) 处：0 <= j <= nums[i] 且 i + j < n。返回到达 n - 1 的最小跳跃次数。测试用例保证可以到达 n - 1。'
+      : 'Given a 0-indexed integer array nums of length n. You are initially positioned at index 0. Each element nums[i] represents the maximum length of a forward jump from index i. In other words, if you are at index i, you can jump to any (i + j) where: 0 <= j <= nums[i] and i + j < n. Return the minimum number of jumps to reach n - 1. The test cases are generated such that you can reach n - 1.'}
   </Typography>
-  <Divider />
+  
+  {/* 示例 */}
+  <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.200' }}>
+    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+      {zh ? '示例 1:' : 'Example 1:'}
+    </Typography>
+    <Typography variant="body2" sx={{ mb: 0.5 }}>
+      <strong>{zh ? '输入:' : 'Input:'}</strong> nums = [2,3,1,1,4]
+    </Typography>
+    <Typography variant="body2" sx={{ mb: 0.5 }}>
+      <strong>{zh ? '输出:' : 'Output:'}</strong> 2
+    </Typography>
+    <Typography variant="body2">
+      <strong>{zh ? '解释:' : 'Explanation:'}</strong> {zh 
+        ? '跳到最后一个位置的最小跳跃数是 2。从下标为 0 跳到下标为 1 的位置，跳 1 步，然后跳 3 步到达数组的最后一个位置。'
+        : 'The minimum number of jumps to reach the last index is 2. Jump 1 step from index 0 to 1, then 3 steps to the last index.'
+      }
+    </Typography>
+  </Box>
+  
+  <Divider sx={{ mt: 2 }} />
 </Paper>
 
-  {/* Q1 */}
-  <MCQBlock q={MCQS[0]} zh={zh} />
-  {/* Q2 */}
-  <MCQBlock q={MCQS[1]} zh={zh} />
-  {/* Q3 (ordering) */}
-  <OrderingBlock q={ORDERING_Q} zh={zh} />
-  {/* Q4 */}
-  <MCQBlock q={MCQS[2]} zh={zh} />
-  {/* Q5 (fill-in) */}
+  {/* Q1 填空题 */}
   <FillBlankBlock q={FILL_Q} zh={zh} />
-  {/* Q6 (Parsons) */}
-  <ParsonsBlock lines={PARSONS_LINES} zh={zh} />
+  {/* Q2 选择题 */}
+  {/* <MCQBlock q={MCQS[0]} zh={zh} /> */}
+  {/* Q3 判断题 */}
+  {/* <MCQBlock q={MCQS[1]} zh={zh} /> */}
+  {/* Q4 填空题 - 分发饼干 */}
+  {/* <FillBlankBlockQ4 q={FILL_Q4} zh={zh} /> */}
 </Box>
 
         </div>
-
         {/* 右侧内容 */}
-      <div
-        className="w-3/5 bg-white relative"
-        ref={rightPaneRef}
-        style={{
-          touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
-          overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
-          overflow: 'hidden',            // 避免绘制时容器产生滚动条
-          contain: 'layout paint',       // 限定重绘范围，减少抖动
-        }}
-      >
+        <div
+          className="w-3/5 bg-white relative"
+          ref={rightPaneRef}
+          style={{
+            touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
+            overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
+            overflow: 'hidden',            // 避免绘制时容器产生滚动条
+            contain: 'layout paint',       // 限定重绘范围，减少抖动
+          }}
+        >
       {/* 右栏悬浮按钮组 */}
         <Box
           position="absolute"
@@ -2491,7 +2622,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
             sx={{
               position: 'absolute',
               top: 12,
-              left: '60%',
+              left: '50%',
               transform: 'translateX(-50%)',
               width: '100%', // 自适应右侧面板宽度
               maxWidth: '90%', // 限制最大宽度，避免超出面板
@@ -2510,7 +2641,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
           sx={{
             position: 'absolute',
             top: 12,
-            left: '60%',
+            left: '55%',
             transform: 'translateX(-50%)',
             zIndex: 30,
             bgcolor: 'rgba(255,255,255,1)',
@@ -2526,11 +2657,11 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
             transition: 'left 0.3s ease-in-out',
           }}
         >
-          <Tooltip title="模式">
+          {/* <Tooltip title="模式">
             <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
               <TuneIcon fontSize="medium" />
             </IconButton>
-          </Tooltip>
+          </Tooltip> */}
           <Tooltip title="移动">
             <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
               <PanToolIcon fontSize="medium" />
@@ -2584,7 +2715,13 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
         </Box>
 
         {/* 模式选择弹窗（美观卡片样式） */}
-        <Modal open={isModeDialogOpen} onClose={() => setIsModeDialogOpen(false)}>
+        <Modal 
+          open={isModeDialogOpen} 
+          onClose={() => setIsModeDialogOpen(false)}
+          sx={{ zIndex: 12000 }}
+          BackdropProps={{ sx: { zIndex: 11990, backgroundColor: 'rgba(0,0,0,0.45)' } }}
+          slotProps={{ backdrop: { sx: { zIndex: 11990, backgroundColor: 'rgba(0,0,0,0.45)' } } } as any}
+        >
           <Box
             sx={{
               position: 'absolute',
@@ -2596,6 +2733,8 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               boxShadow: 10,
               p: 3,
               minWidth: 560,
+              zIndex: 12010,
+              pointerEvents: 'auto',
             }}
           >
             <Typography variant="h6" sx={{ mb: 2, textAlign: 'center', fontWeight: 600 }}>选择模式</Typography>
@@ -2739,7 +2878,20 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               const clientY = (e as any).clientY as number;
               setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
             }}
+            onTouchMove={(e) => {
+              if (!excalidrawAPI) return;
+              e.preventDefault();
+              const appState = excalidrawAPI.getAppState();
+              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+              const rect = rightPaneRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const touch = e.touches[0];
+              const clientX = touch.clientX;
+              const clientY = touch.clientY;
+              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+            }}
             onMouseLeave={() => setInsertGhost(null)}
+            onTouchEnd={() => setInsertGhost(null)}
             sx={{
               position: 'absolute',
               top: 0,
@@ -2749,6 +2901,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               zIndex: 40,
               cursor: 'crosshair',
               background: 'transparent',
+              touchAction: 'none', // 防止触摸滚动
             }}
           />
         )}
@@ -2805,7 +2958,20 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               const clientY = (e as any).clientY as number;
               setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
             }}
+            onTouchMove={(e) => {
+              if (!excalidrawAPI) return;
+              e.preventDefault();
+              const appState = excalidrawAPI.getAppState();
+              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+              const rect = rightPaneRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const touch = e.touches[0];
+              const clientX = touch.clientX;
+              const clientY = touch.clientY;
+              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+            }}
             onMouseLeave={() => setInsertGhost(null)}
+            onTouchEnd={() => setInsertGhost(null)}
             sx={{
               position: 'absolute',
               top: 0,
@@ -2815,6 +2981,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               zIndex: 40,
               cursor: 'crosshair',
               background: 'transparent',
+              touchAction: 'none', // 防止触摸滚动
             }}
           />
         )}
@@ -2994,7 +3161,20 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               const clientY = (e as any).clientY as number;
               setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
             }}
+            onTouchMove={(e) => {
+              if (!excalidrawAPI) return;
+              e.preventDefault();
+              const appState = excalidrawAPI.getAppState();
+              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
+              const rect = rightPaneRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const touch = e.touches[0];
+              const clientX = touch.clientX;
+              const clientY = touch.clientY;
+              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
+            }}
             onMouseLeave={() => setInsertGhost(null)}
+            onTouchEnd={() => setInsertGhost(null)}
             sx={{
               position: 'absolute',
               top: 0,
@@ -3004,6 +3184,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
               zIndex: 40,
               cursor: 'crosshair',
               background: 'transparent',
+              touchAction: 'none', // 防止触摸滚动
             }}
           />
         )}
@@ -3249,7 +3430,7 @@ const steps = hints_greed.map((h) => ({ stepText: h }));
 
        
         </div>
-      </div>
+      </main>
       {/* Notes功能已集成到Story卡片中，不再需要单独的Modal */}
     </div>
   );

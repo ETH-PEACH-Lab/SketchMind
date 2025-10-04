@@ -1,9 +1,11 @@
 import dynamic from 'next/dynamic';
 import { useState, useRef, useMemo, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 // import StoryPlayer from '../components/StoryPlayer';
 // 顶部先引入 MUI 组件
-import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon } from '@mui/material'
-import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book, ChevronRight } from '@mui/icons-material'
+import { IconButton, Tooltip, Box, Modal, Typography, Button, ToggleButton, ToggleButtonGroup, Stack, SvgIcon, Switch, Collapse, Tabs, Tab, CircularProgress } from '@mui/material'
+import { CheckCircle as CheckIcon, Lightbulb, ArrowForwardIos as NextIcon, Explore, Book, ChevronRight, ChevronLeft, BugReport as BugReportIcon, PlayArrow, CloudUpload } from '@mui/icons-material'
 import TuneIcon from '@mui/icons-material/Tune';
 import CropSquareIcon from '@mui/icons-material/CropSquare';
 import PanToolIcon from '@mui/icons-material/PanTool';
@@ -44,7 +46,7 @@ const Excalidraw = dynamic(
   { ssr: false }
 );
 
-const MarkdownWithDrawing = dynamic(() => import('../components/MarkdownWithDrawing'), { ssr: false });
+// const MarkdownWithDrawing = dynamic(() => import('../components/MarkdownWithDrawing'), { ssr: false });
 // const SVGWhiteboard = dynamic(() => import('../components/SVGWhiteboard'), { ssr: false });
 
 type StepScene = {
@@ -67,6 +69,74 @@ export default function Home() {
   const [isTablet, setIsTablet] = useState(false);
   
   const [api, setApi] = useState(null);
+  // 开发环境开关：允许通过查询参数 ?device=tablet|desktop|mobile 强制设备模式
+  const devDeviceOverrideRef = useRef<null | 'mobile' | 'tablet' | 'desktop'>(null);
+
+  // 设备识别：使用输入能力 + 屏幕宽度，并支持开发参数覆盖，给 <html> 打标（device-mobile/tablet/desktop）
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // 读取一次 URL 覆盖参数
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const dev = (params.get('device') || '').toLowerCase();
+      if (dev === 'mobile' || dev === 'tablet' || dev === 'desktop') {
+        devDeviceOverrideRef.current = dev as 'mobile' | 'tablet' | 'desktop';
+      } else {
+        devDeviceOverrideRef.current = null;
+      }
+    } catch {}
+
+    const applyDeviceClasses = () => {
+      let mobile = false;
+      let tablet = false;
+
+      if (devDeviceOverrideRef.current) {
+        mobile = devDeviceOverrideRef.current === 'mobile';
+        tablet = devDeviceOverrideRef.current === 'tablet';
+      } else {
+        const isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+        const w = window.innerWidth;
+        mobile = isTouch && w < 768;
+        tablet = isTouch && w >= 768 && w <= 1024;
+      }
+
+      setIsMobile(mobile);
+      setIsTablet(tablet);
+
+      const root = document.documentElement;
+      root.classList.toggle('device-mobile', mobile);
+      root.classList.toggle('device-tablet', tablet);
+      root.classList.toggle('device-desktop', !mobile && !tablet);
+    };
+
+    applyDeviceClasses();
+    const onResize = () => applyDeviceClasses();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+
+  // 当识别为平板时，应用更贴合触控的默认布局（减少分栏、聚焦画布）
+  useEffect(() => {
+    if (isTablet) {
+      try {
+        setIsLeftPanelCollapsed(true);
+        setLeftPct(70);
+        // 不再自动打开素材库，避免布局抖动与页面高度变化
+        setShowLibraryBottom(false);
+      } catch {}
+    } else {
+      // 非平板（桌面优先体验）
+      try {
+        setIsLeftPanelCollapsed(false);
+        setLeftPct(60);
+      } catch {}
+    }
+  }, [isTablet]);
   // const [steps, setSteps] = useState<any[]>([])
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawImperativeAPI | null>(null)
   const [currentStepText, setCurrentStepText] = useState<string>(''); 
@@ -78,10 +148,47 @@ export default function Home() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0); // 当前 step 的 index
   const [savedSteps, setSavedSteps] = useState<any[]>([]); // 保存的步骤内容
   const [mode, setMode] = useState<'story' | 'explore'>('story'); // 添加mode状态
+  // Scaffolding mode from StoryPlayer (global), default Low
+    const [scaffoldingMode, setScaffoldingMode] = useState<'Low'|'Medium'|'High'|'Adaptive'>('Low');
+  const [isClient, setIsClient] = useState(false);
+  const [currentScaffoldingMode, setCurrentScaffoldingMode] = useState<string | null>(null);
+  const [hasSelectionError, setHasSelectionError] = useState(false);
+  
+  useEffect(() => {
+    setIsClient(true);
+    // Initial read of scaffolding mode
+    try {
+      const mode = (window as any)?.sketchMindScaffoldingMode || localStorage.getItem('sketchMindScaffoldingMode');
+      setCurrentScaffoldingMode(mode);
+    } catch {}
+    
+    // Listen for mode changes
+    const handleModeChange = (e: any) => {
+      try {
+        const mode = e?.detail?.mode || (window as any)?.sketchMindScaffoldingMode || localStorage.getItem('sketchMindScaffoldingMode');
+        setCurrentScaffoldingMode(mode);
+      } catch {}
+    };
+    
+    // Listen for selection errors
+    const handleSelectionError = (e: any) => {
+      try {
+        const error = e?.detail?.error || (window as any)?.sketchMindSelectionError || false;
+        setHasSelectionError(error);
+      } catch {}
+    };
+    
+    window.addEventListener('scaffoldingModeChanged', handleModeChange);
+    window.addEventListener('selectionErrorChanged', handleSelectionError);
+    return () => {
+      window.removeEventListener('scaffoldingModeChanged', handleModeChange);
+      window.removeEventListener('selectionErrorChanged', handleSelectionError);
+    };
+  }, []);
   // 自定义插入模式（点击画布插入）
   const [pendingInsertTool, setPendingInsertTool] = useState<'rectangle' | 'ellipse' | null>(null);
   const rightPaneRef = useRef<HTMLDivElement | null>(null);
-  // 底部素材库
+  // 底部素材库（关闭）
   const [showLibraryBottom, setShowLibraryBottom] = useState(false);
   const [libraryItems, setLibraryItems] = useState<any[]>([]);
   const [pendingLibraryItem, setPendingLibraryItem] = useState<any | null>(null);
@@ -104,6 +211,61 @@ export default function Home() {
   const lastElementsCountRef = useRef(0);
   const [ghostViewport, setGhostViewport] = useState<{ scrollX: number; scrollY: number; zoom: number }>({ scrollX: 0, scrollY: 0, zoom: 1 });
   const [isModeDialogOpen, setIsModeDialogOpen] = useState(false);
+  // Guides overlay state: boxes and glow pointers rendered above canvas
+  const [guides, setGuides] = useState<Array<{
+    id: string;
+    type: 'shake' | 'glow' | 'both';
+    screenX: number; screenY: number; screenW: number; screenH: number;
+    dotX: number; dotY: number;
+  }>>([]);
+// --- LeetCode风格布局：左右可拖拽分栏 ---
+const [leftPct, setLeftPct] = useState(60);    // 左侧初始占比（百分比）→ 右侧初始约40%
+const [isResizing, setIsResizing] = useState(false);
+// 鼠标接近垂直分隔线（容差阈值）的检测，用于扩大拖拽判定范围但不改变可见样式
+const [nearVResizer, setNearVResizer] = useState(false);
+// 鼠标接近右侧上下分隔线
+const [nearTopResizer, setNearTopResizer] = useState(false);
+// 鼠标接近左侧底部分隔线
+const [nearLeftAiResizer, setNearLeftAiResizer] = useState(false);
+// 当前命中的最近分隔线类型：'v' | 'top' | 'leftAi' | null
+const [activeNear, setActiveNear] = useState<null | 'v' | 'top' | 'leftAi'>(null);
+
+const containerRef = useRef<HTMLDivElement | null>(null);
+const leftBottomResizerRef = useRef<HTMLDivElement | null>(null);
+const topResizerRef = useRef<HTMLDivElement | null>(null);
+
+useEffect(() => {
+  const handleMove = (e: any) => {
+    if (!isResizing || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const clientX = (e && typeof e.clientX === 'number') ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const x = clientX - rect.left;
+    const next = Math.max(20, Math.min(80, (x / rect.width) * 100)); // 左侧限制在 20%~80%
+    setLeftPct(next);
+  };
+  const stop = () => setIsResizing(false);
+
+  window.addEventListener('mousemove', handleMove);
+  window.addEventListener('mouseup', stop);
+  // 支持触控/Apple Pencil 的 Pointer 事件
+  window.addEventListener('pointermove', handleMove as any, { passive: false } as any);
+  window.addEventListener('pointerup', stop as any, { passive: true } as any);
+  // 触摸事件支持（旧设备/浏览器）
+  window.addEventListener('touchmove', handleMove as any, { passive: false } as any);
+  window.addEventListener('touchend', stop as any, { passive: true } as any);
+  window.addEventListener('touchcancel', stop as any, { passive: true } as any);
+  return () => {
+    window.removeEventListener('mousemove', handleMove);
+    window.removeEventListener('mouseup', stop);
+    window.removeEventListener('pointermove', handleMove as any);
+    window.removeEventListener('pointerup', stop as any);
+    window.removeEventListener('touchmove', handleMove as any);
+    window.removeEventListener('touchend', stop as any);
+    window.removeEventListener('touchcancel', stop as any);
+  };
+}, [isResizing]);
+
+  
 
   useEffect(() => {
     if (!aiGhost || !excalidrawAPI) return;
@@ -129,7 +291,7 @@ export default function Home() {
   // 画布插入预览（ghost）
   const [insertGhost, setInsertGhost] = useState<{ x: number; y: number; zoom: number } | null>(null);
   // 素材库固定标题
-  const libraryCaptions = ['代码','手写','打字','公式','任意图形','箭头连线','矩阵','图','树','栈','数组','链表'];
+  const libraryCaptions = ['代码','打字','手写','公式','任意图形','箭头连线','矩阵','图','树','栈','数组','链表'];
 
   // 当前选中的组
   const [currentGroup, setCurrentGroup] = useState(1);
@@ -148,6 +310,18 @@ export default function Home() {
 
   // 左侧描述面板折叠状态
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  // 侧边栏展开状态
+  const [isProblemExpanded, setIsProblemExpanded] = useState(true);
+  const [isAlgorithmExpanded, setIsAlgorithmExpanded] = useState(true);
+  // 右侧上栏：问题 / 直觉 / 算法 切换
+  const [rightTopTab, setRightTopTab] = useState<'problem' | 'intuition' | 'algorithm'>('problem');
+  // 右侧上下分栏比例与拖拽
+  const [topPct, setTopPct] = useState(60);      // 右侧上栏60%，下栏40%
+  const [isTopResizing, setIsTopResizing] = useState(false);
+  const rightSplitRef = useRef<HTMLDivElement | null>(null);
+  // 顶部操作按钮 loading 状态
+  const [topLoadingCheck, setTopLoadingCheck] = useState(false);
+  const [topLoadingHint, setTopLoadingHint] = useState(false);
 
   // 为每个模式维护独立的画布状态
   const [exploreModeCanvas, setExploreModeCanvas] = useState<StepScene>({
@@ -168,8 +342,132 @@ export default function Home() {
   
   // 添加模式切换状态，防止在切换过程中保存
   const isModeSwitching = useRef(false);
-  // 故事模式算法选择：algo1（默认）或 iter（迭代版）
+  // 故事模式算法选择：固定使用递归方法（algo1）
   const [storyAlgorithm, setStoryAlgorithm] = useState<'algo1' | 'iter'>('algo1');
+  // AI 结果（左侧底栏显示）
+  const displayNote = stepNotes[currentStepIndex] ?? notes;
+  const checkMsg = stepChecks[currentStepIndex]?.message || '';
+  const errorRegex = /AI\s*服务\s*暂时|网络.*不可用|稍后再试|错误|失败|network|timeout|unavailable|service\s*error|try\s*again/i;
+  const isErrorNote = (!!displayNote && errorRegex.test(displayNote)) || (!!checkMsg && errorRegex.test(checkMsg));
+  // 左栏底部 AI 面板高度与拖拽
+  const [leftAiHeight, setLeftAiHeight] = useState(140);
+  const [isLeftAiResizing, setIsLeftAiResizing] = useState(false);
+  const leftColumnRef = useRef<HTMLDivElement | null>(null);
+
+  // 顶部提交（Submit）与调试/提示（Debug/Hint）按钮事件
+  const handleTopCheck = async () => {
+    try {
+      setTopLoadingCheck(true);
+      await onCheck();
+    } finally {
+      setTopLoadingCheck(false);
+    }
+  };
+  const handleTopHint = async () => {
+    try {
+      setTopLoadingHint(true);
+      await onNextDraw();
+    } finally {
+      setTopLoadingHint(false);
+    }
+  };
+
+  // 右侧上下分栏拖拽监听（在相关 state 声明之后注册，避免引用提升错误）
+  useEffect(() => {
+    const onMove = (e: any) => {
+      if (!isTopResizing || !rightSplitRef.current) return;
+      const rect = rightSplitRef.current.getBoundingClientRect();
+      const clientY = (e && typeof e.clientY === 'number') ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      const y = clientY - rect.top;
+      const next = Math.max(20, Math.min(80, (y / rect.height) * 100)); // 顶部限制在 20%~80%
+      setTopPct(next);
+    };
+    const onUp = () => setIsTopResizing(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    // Pointer 事件支持
+    window.addEventListener('pointermove', onMove as any, { passive: false } as any);
+    window.addEventListener('pointerup', onUp as any, { passive: true } as any);
+    // Touch 事件支持
+    window.addEventListener('touchmove', onMove as any, { passive: false } as any);
+    window.addEventListener('touchend', onUp as any, { passive: true } as any);
+    window.addEventListener('touchcancel', onUp as any, { passive: true } as any);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove as any);
+      window.removeEventListener('pointerup', onUp as any);
+      window.removeEventListener('touchmove', onMove as any);
+      window.removeEventListener('touchend', onUp as any);
+      window.removeEventListener('touchcancel', onUp as any);
+    };
+  }, [isTopResizing]);
+
+  // 左栏底部 AI 面板拖拽监听
+  useEffect(() => {
+    const onMove = (e: any) => {
+      if (!isLeftAiResizing || !leftColumnRef.current) return;
+      const rect = leftColumnRef.current.getBoundingClientRect();
+      // 以鼠标到左列底部的距离作为高度
+      const clientY = (e && typeof e.clientY === 'number') ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      const newHeight = Math.round(rect.bottom - clientY);
+      const clamped = Math.max(80, Math.min(400, newHeight));
+      setLeftAiHeight(clamped);
+    };
+    const onUp = () => setIsLeftAiResizing(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    // Pointer 事件支持（触控/手写笔）
+    window.addEventListener('pointermove', onMove as any, { passive: false } as any);
+    window.addEventListener('pointerup', onUp as any, { passive: true } as any);
+    // Touch 事件支持
+    window.addEventListener('touchmove', onMove as any, { passive: false } as any);
+    window.addEventListener('touchend', onUp as any, { passive: true } as any);
+    window.addEventListener('touchcancel', onUp as any, { passive: true } as any);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove as any);
+      window.removeEventListener('pointerup', onUp as any);
+      window.removeEventListener('touchmove', onMove as any);
+      window.removeEventListener('touchend', onUp as any);
+      window.removeEventListener('touchcancel', onUp as any);
+    };
+  }, [isLeftAiResizing]);
+
+  // 在左侧 AI 面板拖拽期间，临时禁用左列的 pointer-events，避免画布/子层拦截事件
+  useEffect(() => {
+    const el = leftColumnRef.current as HTMLElement | null;
+    if (!el) return;
+    const prev = el.style.pointerEvents;
+    if (isLeftAiResizing) {
+      el.style.pointerEvents = 'none';
+    } else {
+      el.style.pointerEvents = prev || '';
+    }
+    return () => {
+      if (el) el.style.pointerEvents = prev;
+    };
+  }, [isLeftAiResizing]);
+
+  // 在左右分栏拖拽期间，同时禁用左右两侧内容的 pointer-events，避免画布/子层截获
+  useEffect(() => {
+    const left = leftColumnRef.current as HTMLElement | null;
+    const right = rightSplitRef.current as HTMLElement | null;
+    const prevLeft = left ? left.style.pointerEvents : '';
+    const prevRight = right ? right.style.pointerEvents : '';
+    if (isResizing) {
+      if (left) left.style.pointerEvents = 'none';
+      if (right) right.style.pointerEvents = 'none';
+    } else {
+      if (left) left.style.pointerEvents = prevLeft || '';
+      if (right) right.style.pointerEvents = prevRight || '';
+    }
+    return () => {
+      if (left) left.style.pointerEvents = prevLeft;
+      if (right) right.style.pointerEvents = prevRight;
+    };
+  }, [isResizing]);
   
   // const titles_iter = [
   //   // '初始化指针',
@@ -201,11 +499,11 @@ export default function Home() {
   // }, [storyAlgorithm]);
 // ✅ 新增：迭代版中英文标题/提示
 const titles_iter_ZH = [
-  '第一次比较并接入',
-  '移动 prev，更新指针，再次比较，继续接入',
-  '循环推进：直到有一条用完',
-  '连接剩余部分，🎉 全部完成！',
-];
+    '第一次比较并接入',
+    '移动 prev，更新指针，再次比较，继续接入',
+    '循环推进：直到有一条用完',
+    '连接剩余部分，🎉 全部完成！',
+  ];
 const titles_iter_EN = [
   'First compare & attach',
   'Move prev, update pointers, compare again',
@@ -217,8 +515,8 @@ const hints_iter_ZH = [
   "创建一个虚拟头结点 prehead（值可写 -1，仅作占位），让 prev 指向它；\n设置 l1 指向 list1 头、l2 指向 list2 头。\n现在：l1=1，l2=1。\n比较 l1 与 l2（节点相等时选择 list1 的节点），应该接入哪个到 prehead 节点之后？\n用橘色箭头从 prehead 节点指向你选择的节点。",
   "把 prev 向前移动到刚接入的 1，并将 l1 指向下一个（此时 l1=2）。再次比较：l1=2，l2=1。\n这次应向 prev 节点接入哪个节点，用橘色箭头标出。",
   "继续循环接入节点，在每次接入后，prev 与对应指针同步前移。\n一直到 l1=null 或者 l2=null 停下。",
-  "当某一条链表指针变为 null，\n将另一条未用完的链表整体接到 prev 所指向节点的后面。完成！返回 prehead.next。\n点击检查是否得到有序链，且所有原节点都被包含。",
-];
+    "当某一条链表指针变为 null，\n将另一条未用完的链表整体接到 prev 所指向节点的后面。完成！返回 prehead.next。\n点击检查是否得到有序链，且所有原节点都被包含。",
+  ];
 const hints_iter_EN = [
   "Create a dummy head `prehead` (e.g., value -1 as a placeholder) and set `prev` to it.\nLet `l1` point to list1 head and `l2` to list2 head.\nNow: l1=1, l2=1.\nCompare l1 and l2 (when equal, choose the node from list1). Which one should be attached after `prehead`?\nUse an orange arrow from `prehead` to the chosen node.",
   "Move `prev` to the just-attached 1, and advance `l1` (now l1=2). Compare again: l1=2, l2=1.\nWhich node should be attached to `prev` this time? Mark with an orange arrow.",
@@ -230,17 +528,13 @@ const hints_iter = zh ? hints_iter_ZH : hints_iter_EN;
 // ✅ 如果你还有贪心/其它算法，也可同样做一份 EN 版，然后像下面这样切换
 // 例如：const hints_greed_ZH = [...]; const hints_greed_EN = [...];
 
-// ✅ 替换你原来的 steps 这段 useMemo（支持 iter & 其它算法 + 中英切换）
-const steps = useMemo(() => {
-  if (storyAlgorithm === 'iter') {
-    const iterHints = zh ? hints_iter_ZH : hints_iter_EN;
-    return iterHints.map((h) => ({ stepText: h }));
-  }
-
-  // 非 iter（你原来默认的“贪心/自定义故事模式步骤”）——做双语
+// 递归方法步骤（固定使用递归，不需要选择）
+  const steps = useMemo(() => {
+  // 递归方法（algo1）——做双语
   if (zh) {
     return [
-      { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4\n查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
+      // { stepText: "让我们开始吧！现在有两个链表：\n• 链表1: 1 → 2 → 4\n• 链表2: 1 → 3 → 4"},
+      { stepText: "查看 list1 和 list2 的头节点（都是 1）。\n我们应该先添加哪一个？\n用绿色圆圈🟢标记出你选择的头节点。" },
       { stepText: "将合并链表 merged 的第一个节点画为刚刚选择的节点，随后从 list2 中移除（用 ❌ 表示已移除）。" },
       { stepText: "连续做3次，自己试着完成！现在链表 list1: 1->2->4, list2：3->4\n规则：🟢选择更小节点 → 接入合并链表 → 在原链表中❌删除\n完成合并链表新接 3 个节点" },
       { stepText: "继续！合并下一个节点。\n在 4 和 4 之间选择后，画出更新后的链表。" },
@@ -248,14 +542,15 @@ const steps = useMemo(() => {
     ];
   } else {
     return [
-      { stepText: "Let's start! We have two lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4\nLook at the heads (both are 1).\nWhich one should we add first?\nMark your choice with a green circle 🟢." },
+      // { stepText: "Let's start! We have two lists:\n• list1: 1 → 2 → 4\n• list2: 1 → 3 → 4"},
+      { stepText: "Look at the heads (both are 1).\nWhich one should we add first?\nMark your choice with a green circle 🟢." },
       { stepText: "Draw the first node of the merged list as the one you just chose, then remove it from the original list (mark with ❌)." },
       { stepText: "Do it three more times by yourself! Now lists are: list1: 1->2->4, list2: 3->4\nRule: 🟢 pick the smaller node → attach to merged list → ❌ delete from the original list\nFinish attaching 3 new nodes." },
       { stepText: "Keep going! Merge the next node.\nBetween 4 and 4, choose one and draw the updated lists." },
       { stepText: "Great! Connect the final node to finish the merged list.\nDouble-check that all nodes are included and the order is correct." },
     ];
   }
-}, [storyAlgorithm, zh]);
+}, [zh]);
 // 1. 文案字典
 const ZH = {
   toolbar_mode: "模式",
@@ -295,6 +590,7 @@ const EN = {
 
 // 2. 根据 zh 选择一份
 const t = useMemo(() => (zh ? ZH : EN), [zh]);
+// Only show special hint when Scaffolding Mode is High; re-compute on global event
 
 
   // 根据算法重置故事模式的所有步骤与画布；第0步采用不同初始文件
@@ -354,13 +650,10 @@ const t = useMemo(() => (zh ? ZH : EN), [zh]);
   // };
   // 把 zh 作为参数（或直接用外层 state 也行）
 const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter', zh: boolean) => {
-  if (!excalidrawAPI) return;
-  try {
-    // 根据语言 & 算法，选择初始文件
-    const initFile =
-      alg === 'iter'
-        ? (zh ? '/initial2.excalidraw' : '/initial2e.excalidraw')
-        : (zh ? '/initial1.excalidraw' : '/initial1e.excalidraw');
+    if (!excalidrawAPI) return;
+    try {
+    // 固定使用递归方法的初始文件
+    const initFile = zh ? '/initial1.excalidraw' : '/initial1e.excalidraw';
 
     // 切换期间先暂停自动保存，避免被旧场景覆盖
     isModeSwitching.current = true;
@@ -371,46 +664,46 @@ const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter', zh: boolean) => {
       appState: { viewBackgroundColor: '#fff' },
     };
 
-    try {
-      const resp = await fetch(initFile);
-      if (resp.ok) {
-        const data = await resp.json();
-        initialStep0 = {
-          elements: Array.isArray(data?.elements) ? data.elements : [],
-          files: data?.files || {},
-          appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
-        };
+      try {
+        const resp = await fetch(initFile);
+        if (resp.ok) {
+          const data = await resp.json();
+          initialStep0 = {
+            elements: Array.isArray(data?.elements) ? data.elements : [],
+            files: data?.files || {},
+            appState: { viewBackgroundColor: '#fff', ...(data?.appState || {}) },
+          };
       } else {
         console.warn('fetch init file failed:', initFile, resp.status);
-      }
+        }
     } catch (e) {
       console.warn(`Failed to fetch init file: ${initFile}`, e);
     }
 
     // 重置步骤场景（第0步用初始文件，其它步清空）
     const stepsCount = steps.length; // 你已有的 steps
-    const initialScenes: Record<number, StepScene> = {};
-    initialScenes[0] = initialStep0;
+      const initialScenes: Record<number, StepScene> = {};
+      initialScenes[0] = initialStep0;
     for (let i = 1; i < stepsCount; i++) {
-      initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
-    }
-    setScenes(initialScenes);
+        initialScenes[i] = { elements: [], files: {}, appState: { viewBackgroundColor: '#fff' } };
+      }
+      setScenes(initialScenes);
 
     // 回到第0步并显示
-    currentStepIndexRef.current = 0;
-    setCurrentStepIndex(0);
+      currentStepIndexRef.current = 0;
+      setCurrentStepIndex(0);
     setCurrentStepText(steps[0]?.stepText || '');
     setStepStatuses(Array(stepsCount).fill('pending'));
-    setStepNotes({});
-    setStepChecks({});
-    setNotes('');
-    setIsNotesOpen(false);
+      setStepNotes({});
+      setStepChecks({});
+      setNotes('');
+      setIsNotesOpen(false);
 
     // 立即刷新到画布
-    excalidrawAPI.updateScene({
+      excalidrawAPI.updateScene({
       elements: Array.from(initialStep0.elements) as any[],
       appState: initialStep0.appState,
-      captureUpdate: 2 as any,
+        captureUpdate: 2 as any,
       collaborators: new Map(),
     });
   } finally {
@@ -422,7 +715,7 @@ const resetStoryForAlgorithm = async (alg: 'algo1' | 'iter', zh: boolean) => {
 useEffect(() => {
   if (!excalidrawAPI) return;
   if (mode !== 'story') return;          // 只在故事模式刷新初始画布
-  resetStoryForAlgorithm(storyAlgorithm, zh);
+  resetStoryForAlgorithm('algo1', zh);   // 固定使用递归方法
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [zh]);
 
@@ -1620,121 +1913,20 @@ useEffect(() => {
 // `;
 
 // console.log(selectedText);
-  const selectedText = `  # 合并两个有序链表
-
-  ## 问题描述
-
-  给定两个有序链表的头节点 \`list1\` 和 \`list2\`。
-
-  将这两个链表合并为一个**有序**链表。合并后的链表应通过将两个链表的节点**拼接**在一起形成。返回合并后的链表的头节点。
+ 
 
 
-  \`\`\`
-  输入：list1 = [1,2,4], list2 = [1,3,4]
-  \`\`\`
-
-  ---
-
-  <details>
-  <summary>✅ 方法 1：递归</summary>
-
-  ### 直觉
-
-  我们可以递归地定义两个链表的合并操作结果如下（避免处理空链表的特殊情况）：
 
 
-  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
-  list2[0] + merge(list1, list2[1:])  否则
+  
+  
 
 
-  即较小的链表头节点加上对剩余元素的合并结果。
-
-  ### 算法
-
-  我们直接模拟上述递归过程，首先处理边界情况。具体来说，如果 l1 或 l2 中的任意一个最初为 null，则无需合并，直接返回非空链表即可。否则，我们确定 l1 和 l2 中哪个头节点较小，并递归地将其 next 值设置为下一次合并的结果。鉴于两个链表均以 null 结尾，递归最终会终止。
-
-  </details>
-
-  ---
-
-  <details>
-  <summary>✅ 方法 2：迭代</summary>
-
-  ### 直觉
-
-  我们可以通过迭代实现相同的思想，假设 l1 完全小于 l2，并逐个处理元素，将 l2 的元素插入到 l1 的必要位置。
-
-  ### 算法
-
-  首先，我们设置一个虚假的"prehead"节点，以便稍后轻松返回合并链表的头节点。我们还维护一个 prev 指针，指向当前正在考虑调整其 next 指针的节点。然后，我们执行以下操作，直到 l1 和 l2 中至少有一个指向 null：如果 l1 的值小于或等于 l2 的值，则将 l1 连接到前一个节点并递增 l1。否则，我们对 l2 执行相同的操作。然后，无论我们连接了哪个链表，我们都递增 prev，使其始终落后于其中一个链表头一步。
-
-  循环终止后，l1 和 l2 中最多有一个非空。因此（因为输入链表是按排序顺序排列的），如果任意一个链表非空，则它只包含大于所有已合并元素的元素。这意味着我们可以简单地将非空链表连接到合并链表并返回。
-
-  要查看此操作的示例，请查看下面的动画：
-
-  <!-- animation-slot -->
-  </details>
-  `
-  const selectedTextEN = `
-  # 🧠 Merge Two Sorted Lists
-
-  ## 📋 Problem Description
-
-  You are given the heads of two sorted linked lists \`list1\` and \`list2\`.
-
-  Merge the two lists into one **sorted** list. The list should be made by **splicing together** the nodes of the first two lists. Return the head of the merged linked list.
-
-  ---
-
-  ### Example
-
-  \`\`\`
-  Input: list1 = [1,2,4], list2 = [1,3,4]
-  \`\`\`
+ 
+ 
 
 
-  ---
-
-  <details>
-  <summary>✅ Approach 1: Recursion</summary>
-
-  ### Intuition
-
-  We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):
-
-
-  list1[0] + merge(list1[1:], list2)  list1[0] < list2[0] \n
-  list2[0] + merge(list1, list2[1:])  otherwise
-
-
-  Namely, the smaller of the two lists' heads plus the result of a merge on the rest of the elements.
-
-  ### Algorithm
-
-  We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.
-
-  </details>
-
-  ---
-
-  <details>
-  <summary>✅ Approach 2: Iteration</summary>
-
-  ### Intuition
-
-  We can achieve the same idea via iteration by assuming that l1 is entirely less than l2 and processing the elements one-by-one, inserting elements of l2 in the necessary places in l1.
-
-  ### Algorithm
-
-  First, we set up a false "prehead" node that allows us to easily return the head of the merged list later. We also maintain a prev pointer, which points to the current node for which we are considering adjusting its next pointer. Then, we do the following until at least one of l1 and l2 points to null: if the value at l1 is less than or equal to the value at l2, then we connect l1 to the previous node and increment l1. Otherwise, we do the same, but for l2. Then, regardless of which list we connected, we increment prev to keep it one step behind one of our list heads.
-
-  After the loop terminates, at most one of l1 and l2 is non-null. Therefore (because the input lists were in sorted order), if either list is non-null, it contains only elements greater than all of the previously-merged elements. This means that we can simply connect the non-null list to the merged list and return it.
-
-  To see this in action on an example, check out the animation below:
-
-  <!-- animation-slot -->
-  </details>
-  `;
+  
   const handleNotesClose = () => {
       setIsNotesOpen(false);
     };
@@ -2250,8 +2442,8 @@ useEffect(() => {
     try {
       (excalidrawAPI as any).setActiveTool?.({ type: 'selection' });
       setPendingInsertTool(null);
-      // 固定打开底部素材库，避免重复点击造成闪烁
-      setShowLibraryBottom(true);
+      // 关闭素材库：不再自动打开
+      setShowLibraryBottom(false);
     } catch (e) {
       console.warn('openLibrary failed', e);
     }
@@ -2260,7 +2452,498 @@ useEffect(() => {
 
     
   return (
-    <div className="flex h-screen">
+    <main
+      ref={containerRef}
+      className="lc-root"
+      onMouseMove={(e) => {
+        if (!containerRef.current) return;
+        // 拖拽中直接显示 col-resize
+        if (isResizing) { setNearVResizer(true); }
+        const rect = containerRef.current.getBoundingClientRect();
+        const dividerX = rect.left + (leftPct / 100) * rect.width;
+        const dist = Math.abs(e.clientX - dividerX);
+        const threshold = 32; // 垂直分隔线进一步提高容差，适配小圆形光标
+        const vHit = dist <= threshold;
+        // 右侧上下分隔线接近检测
+        if (rightSplitRef.current) {
+          const rrect = rightSplitRef.current.getBoundingClientRect();
+          const dividerY = rrect.top + (topPct / 100) * rrect.height;
+          const distY = Math.abs(e.clientY - dividerY);
+          setNearTopResizer(distY <= 16);
+        } else {
+          setNearTopResizer(false);
+        }
+        // 左侧底部分隔线接近检测（使用实际分隔线 DOM）
+        if (leftColumnRef.current) {
+          const lrect = leftColumnRef.current.getBoundingClientRect();
+          const dividerY = lrect.bottom - leftAiHeight;
+          const distY = Math.abs(e.clientY - dividerY);
+          const thresholdH = 48; // 增加左侧底部分隔线的容差
+          const insideX = e.clientX >= lrect.left - 16 && e.clientX <= lrect.right + 16; // 增加左侧底部分隔线的水平容差
+          setNearLeftAiResizer(distY <= thresholdH && insideX);
+        } else {
+          setNearLeftAiResizer(false);
+        }
+        // 距离选择：谁更近就启用谁，避免垂直优先盖过左侧横向
+        setNearVResizer(vHit);
+        const dV = vHit ? dist : Number.POSITIVE_INFINITY;
+        const dTop = (rightSplitRef.current)
+          ? Math.abs(e.clientY - (rightSplitRef.current.getBoundingClientRect().top + (topPct / 100) * rightSplitRef.current.getBoundingClientRect().height))
+          : Number.POSITIVE_INFINITY;
+        const dLeft = (leftColumnRef.current)
+          ? Math.abs(e.clientY - (leftColumnRef.current.getBoundingClientRect().bottom - leftAiHeight))
+          : Number.POSITIVE_INFINITY;
+        // 如果在纵向容差范围内，dLeft 为 0；否则是超出的量
+        const hits: Array<{key: 'v'|'top'|'leftAi', dist: number, hit: boolean}> = [
+          { key: 'v', dist: dV, hit: vHit },
+          { key: 'top', dist: dTop, hit: nearTopResizer },
+          { key: 'leftAi', dist: dLeft, hit: nearLeftAiResizer },
+        ];
+        const active = hits.filter(h => h.hit).sort((a,b) => a.dist - b.dist)[0]?.key ?? null;
+        setActiveNear(active);
+        // 若用户已按下主键（e.buttons & 1），且尚未进入拖拽，则直接从移动开始拖拽，提高起拖成功率
+        if ((e.buttons & 1) && !isResizing && !isTopResizing && !isLeftAiResizing && active) {
+          if (active === 'v') setIsResizing(true);
+          else if (active === 'top') setIsTopResizing(true);
+          else if (active === 'leftAi') setIsLeftAiResizing(true);
+        }
+      }}
+      onPointerMove={(e) => {
+        if (!containerRef.current) return;
+        if (isResizing) { setNearVResizer(true); }
+        const rect = containerRef.current.getBoundingClientRect();
+        const dividerX = rect.left + (leftPct / 100) * rect.width;
+        const dist = Math.abs(e.clientX - dividerX);
+        const threshold = isTablet ? 48 : 32;
+        const vHit = dist <= threshold;
+        if (rightSplitRef.current) {
+          const rrect = rightSplitRef.current.getBoundingClientRect();
+          const dividerY = rrect.top + (topPct / 100) * rrect.height;
+          const distY = Math.abs(e.clientY - dividerY);
+          const topThreshold = isTablet ? 28 : 16;
+          setNearTopResizer(distY <= topThreshold);
+        } else {
+          setNearTopResizer(false);
+        }
+        if (leftBottomResizerRef.current) {
+          const lrect = leftBottomResizerRef.current.getBoundingClientRect();
+          const yPad = isTablet ? 28 : 16;
+          const xPad = isTablet ? 48 : 32;
+          const insideY = e.clientY >= (lrect.top - yPad) && e.clientY <= (lrect.bottom + yPad);
+          const insideX = e.clientX >= (lrect.left - xPad) && e.clientX <= (lrect.right + xPad);
+          setNearLeftAiResizer(insideY && insideX);
+        } else {
+          setNearLeftAiResizer(false);
+        }
+        setNearVResizer(vHit);
+        const dV = vHit ? dist : Number.POSITIVE_INFINITY;
+        const dTop = (rightSplitRef.current)
+          ? Math.abs(e.clientY - (rightSplitRef.current.getBoundingClientRect().top + (topPct / 100) * rightSplitRef.current.getBoundingClientRect().height))
+          : Number.POSITIVE_INFINITY;
+        const dLeft = (leftBottomResizerRef.current)
+          ? Math.max(
+              0,
+              Math.max((leftBottomResizerRef.current.getBoundingClientRect().top - 16) - e.clientY,
+                       e.clientY - (leftBottomResizerRef.current.getBoundingClientRect().bottom + 16))
+            )
+          : Number.POSITIVE_INFINITY;
+        const hits: Array<{key: 'v'|'top'|'leftAi', dist: number, hit: boolean}> = [
+          { key: 'v', dist: dV, hit: vHit },
+          { key: 'top', dist: dTop, hit: nearTopResizer },
+          { key: 'leftAi', dist: dLeft, hit: nearLeftAiResizer },
+        ];
+        const active = hits.filter(h => h.hit).sort((a,b) => a.dist - b.dist)[0]?.key ?? null;
+        setActiveNear(active);
+      }}
+      onMouseLeave={() => { setNearVResizer(false); setNearTopResizer(false); setNearLeftAiResizer(false); setActiveNear(null); }}
+      onPointerLeave={() => { setNearVResizer(false); setNearTopResizer(false); setNearLeftAiResizer(false); setActiveNear(null); }}
+      onMouseDown={(e) => {
+        // 允许在接近分隔线时，从任何位置开始拖拽
+        if (activeNear === 'v') {
+          e.preventDefault();
+          setIsResizing(true);
+        }
+        if (activeNear === 'top') {
+          e.preventDefault();
+          setIsTopResizing(true);
+        }
+        if (activeNear === 'leftAi') {
+          e.preventDefault();
+          setIsLeftAiResizing(true);
+        }
+      }}
+      onMouseDownCapture={(e) => {
+        // 捕获阶段优先处理，避免子元素（如画布）拦截
+        if (activeNear) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (activeNear === 'v') setIsResizing(true);
+          else if (activeNear === 'top') setIsTopResizing(true);
+          else if (activeNear === 'leftAi') setIsLeftAiResizing(true);
+        }
+      }}
+      onPointerDownCapture={(e) => {
+        if (activeNear) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (activeNear === 'v') setIsResizing(true);
+          else if (activeNear === 'top') setIsTopResizing(true);
+          else if (activeNear === 'leftAi') setIsLeftAiResizing(true);
+        }
+      }}
+      onTouchStartCapture={(e) => {
+        if (activeNear) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (activeNear === 'v') setIsResizing(true);
+          else if (activeNear === 'top') setIsTopResizing(true);
+          else if (activeNear === 'leftAi') setIsLeftAiResizing(true);
+        }
+      }}
+      style={{ display: 'flex', width: '100%', minHeight: '100dvh', height: '100dvh', overflow: 'hidden', position: 'relative', cursor: (
+        isResizing ? 'col-resize' as const : (
+          activeNear === 'v' ? 'col-resize' as const : (
+            activeNear === 'top' ? 'row-resize' as const : (
+              activeNear === 'leftAi' ? 'row-resize' as const : undefined
+            )
+          )
+        )
+      ) }}
+    >
+      {/* 顶部全局操作栏（LeetCode风格居中按钮） */}
+      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, borderBottom: 1, borderColor: 'divider', bgcolor: '#fff', zIndex: 2000 }}>
+        <Box sx={{ position: 'relative', height: '100%' }}>
+          {/* 左侧：项目名 */}
+          <Box sx={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#333' }}>SketchMind</Typography>
+          </Box>
+          {/* 中间操作按钮组 */}
+          <Box sx={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 2, px: 1, py: 0.5, boxShadow: 0 }}>
+            <Button
+              onClick={handleTopHint}
+              disabled={topLoadingHint}
+              sx={{ minWidth: 0, color: '#555', textTransform: 'none', '&:hover': { bgcolor: '#eeeeee' } }}
+              startIcon={topLoadingHint ? <CircularProgress size={18} /> : <PlayArrow />}
+            >
+              {zh ? 'AI 画图' : 'AI Draw'}
+            </Button>
+            <Button
+              onClick={handleTopCheck}
+              disabled={topLoadingCheck}
+              sx={{ minWidth: 0, color: 'success.main', fontWeight: 700, textTransform: 'none', '&:hover': { bgcolor: '#e8f5e9' } }}
+              startIcon={topLoadingCheck ? <CircularProgress size={18} /> : <CloudUpload sx={{ color: 'success.main' }} />}
+            >
+              {zh ? '检查步骤' : 'Check Step'}
+            </Button>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* 顶部右侧：语言切换 */}
+      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, pointerEvents: 'none', zIndex: 2001 }}>
+        <Box sx={{ position: 'relative', height: '100%' }}>
+          <Box sx={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 0.75, pointerEvents: 'auto' }}>
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#666' }}>EN</Typography>
+            <Switch
+              checked={zh}
+              onChange={(_: any, checked: boolean) => {
+                if (checked !== zh) setZh(checked);
+              }}
+              size="small"
+              sx={{
+                '& .MuiSwitch-thumb': { width: 16, height: 16 },
+                '& .MuiSwitch-track': { height: 12, borderRadius: 6 },
+              }}
+            />
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#666' }}>中文</Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* 主体布局容器（顶栏高度占位，防止总高度超过视口） */}
+      <Box sx={{ display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: '100%', pt: '56px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      {/* 问题描述侧拉栏 - 右侧固定标题 */}
+      {false && (
+      <Box
+        sx={{
+          position: 'fixed',
+          right: 0,
+          top: 0,
+          height: '35%',
+          zIndex: 1000,
+          display: 'flex',
+        }}
+      >
+        {/* 问题内容面板 */}
+        <Box
+          sx={{
+            width: 400,
+            height: '100%',
+            bgcolor: 'white',
+            borderLeft: 1,
+            borderColor: 'divider',
+            boxShadow: 3,
+            display: 'flex',
+            flexDirection: 'column',
+            transform: isProblemExpanded ? 'translateX(0)' : 'translateX(400px)',
+            transition: 'transform 0.3s ease-in-out',
+      
+          }}
+        >
+          {/* 问题内容 */}
+          <Box sx={{ p: 1.5, overflow: 'auto', flex: 1 ,'&::-webkit-scrollbar': { width: '4px' },
+              '&::-webkit-scrollbar-track': { bgcolor: 'rgba(0,0,0,0.1)' },
+              '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(165, 175, 76, 0.3)', borderRadius: '2px' },
+}}>
+                          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#8b7355' }}>
+                {zh ? '📋 合并有序链表' : '📋 Merge Two Sorted Lists'}
+              </Typography>
+            
+            
+          
+                <Typography variant="body1" sx={{ lineHeight: 1.6, mb: 2 }}>
+                  {zh 
+                    ? '给定两个有序链表的头节点 list1 和 list2。将这两个链表合并为一个有序链表。合并后的链表应通过将两个链表的节点拼接在一起形成。返回合并后的链表的头节点。'
+                    : 'You are given the heads of two sorted linked lists list1 and list2. Merge the two lists into one sorted list. The list should be made by splicing together the nodes of the first two lists. Return the head of the merged linked list.'
+                  }
+                </Typography>
+           
+
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                  {zh ? ' 示例' : 'Example'}
+                </Typography>
+            
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', lineHeight: 1.8 }}>
+                    {zh 
+                      ? '输入：list1 = [1,2,4],\n list2 = [1,3,4]'
+                      : 'Input: list1 = [1,2,4],\n list2 = [1,3,4]'
+                    }
+                  </Typography>
+               
+            
+
+           
+          </Box>
+        </Box>
+
+        {/* 问题标题 - 固定在右侧边缘，带折叠符号 */}
+        <Box
+          sx={{
+            width: 50,
+            height: '100%',
+            bgcolor: '#d4c4a8',
+            color: 'white',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            '&:hover': { bgcolor: '#b8a082' },
+            writingMode: 'vertical-rl',
+            textOrientation: 'mixed',
+            boxShadow: 2,
+            position: 'relative',
+          }}
+          onClick={() => setIsProblemExpanded(!isProblemExpanded)}
+        >
+          {/* 折叠符号 */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <IconButton 
+              size="small" 
+              sx={{ 
+                color: 'white',
+                p: 0.5,
+                minWidth: 20,
+                minHeight: 20,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsProblemExpanded(!isProblemExpanded);
+              }}
+            >
+              {isProblemExpanded ? <ChevronRight fontSize="small" /> : <ChevronLeft fontSize="small" />}
+            </IconButton>
+          </Box>
+          
+          {/* 标题文字 */}
+                      <Typography 
+              variant="h6" 
+              sx={{ 
+                fontWeight: 600, 
+                fontSize: '1.2rem',
+                textAlign: 'center',
+              }}
+            >
+              {zh ? '问题描述' : 'Problem'}
+            </Typography>
+        </Box>
+      </Box>
+      )}
+
+      {/* 算法描述侧拉栏 - 右侧固定标题 */}
+      {false && (
+      <Box
+        sx={{
+          position: 'fixed',
+          right: 0,
+          top: '35%',
+          height: '65%',
+          zIndex: 1002,
+          display: 'flex',
+        }}
+      >
+        {/* 算法内容面板 */}
+        <Box
+          sx={{
+            width: 280,
+            height: '100%',
+            bgcolor: 'white',
+            borderLeft: 1,
+            borderColor: 'divider',
+            boxShadow: 3,
+            display: 'flex',
+            flexDirection: 'column',
+            transform: isAlgorithmExpanded ? 'translateX(0)' : 'translateX(280px)',
+            transition: 'transform 0.3s ease-in-out',
+          }}
+        >
+          {/* 算法内容 */}
+          <Box sx={{ p: 1.5, overflow: 'auto', flex: 1,'&::-webkit-scrollbar': { width: '4px' },
+              '&::-webkit-scrollbar-track': { bgcolor: 'rgba(0,0,0,0.1)' },
+              '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(76, 175, 80, 0.3)', borderRadius: '2px' },
+ }}>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#6b7c32' }}>
+              {zh ? '✅ 递归算法' : '✅ Recursion Algorithm'}
+            </Typography>
+            
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                {zh ? '直觉' : 'Intuition'}
+              </Typography>
+              <Typography variant="body2" sx={{ lineHeight: 1.6, mb: 2 }}>
+                {zh 
+                  ? '我们可以递归地定义两个链表的合并操作结果如下（避免处理空链表的特殊情况）：'
+                  : 'We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):'
+                }
+              </Typography>
+              
+              <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, mb: 2, border: '1px solid #e0e0e0' }}>
+      <Typography
+        component="pre"
+        variant="body2"
+        sx={{ fontFamily: 'monospace', lineHeight: 1.8, whiteSpace: 'pre-wrap', m: 0 }}
+      >
+        {zh
+          ? 'list1[0] + merge(list1[1:], list2)  if list1[0] < list2[0]\nlist2[0] + merge(list1, list2[1:])  otherwise'
+          : 'list1[0] + merge(list1[1:], list2)  if list1[0] < list2[0]\nlist2[0] + merge(list1, list2[1:])  otherwise'}
+      </Typography>
+    </Box>
+
+              
+              <Typography variant="body2" sx={{ lineHeight: 1.6, fontStyle: 'italic' }}>
+                {zh 
+                  ? '即较小的链表头节点加上对剩余元素的合并结果。'
+                  : 'Namely, the smaller of the two lists\' heads plus the result of a merge on the rest of the elements.'
+                }
+              </Typography>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                {zh ? '算法' : 'Algorithm'}
+              </Typography>
+              <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                {zh 
+                  ? '我们直接模拟上述递归过程，首先处理边界情况。具体来说，如果 l1 或 l2 中的任意一个最初为 null，则无需合并，直接返回非空链表即可。否则，我们确定 l1 和 l2 中哪个头节点较小，并递归地将其 next 值设置为下一次合并的结果。鉴于两个链表均以 null 结尾，递归最终会终止。'
+                  : 'We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.'
+                }
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* 算法标题 - 固定在右侧边缘，带折叠符号 */}
+        <Box
+          sx={{
+            width: 50,
+            height: '100%',
+            bgcolor: '#a8b896',
+            color: 'white',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            '&:hover': { bgcolor: '#8fa67b' },
+            writingMode: 'vertical-rl',
+            textOrientation: 'mixed',
+            boxShadow: 2,
+            position: 'relative',
+            
+            zIndex: 1003, // 确保标题栏在最上层
+          }}
+          onClick={() => {
+            console.log('算法标题被点击，当前状态:', isAlgorithmExpanded);
+            setIsAlgorithmExpanded(!isAlgorithmExpanded);
+          }}
+        >
+          {/* 折叠符号 */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <IconButton 
+              size="small" 
+              sx={{ 
+                color: 'white',
+                p: 0.5,
+                minWidth: 20,
+                minHeight: 20,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                console.log('算法折叠按钮被点击，当前状态:', isAlgorithmExpanded);
+                setIsAlgorithmExpanded(!isAlgorithmExpanded);
+              }}
+            >
+              {isAlgorithmExpanded ? <ChevronRight fontSize="small" /> : <ChevronLeft fontSize="small" />}
+            </IconButton>
+          </Box>
+          
+          {/* 标题文字 */}
+                      <Typography 
+              variant="h6" 
+              sx={{ 
+                fontWeight: 600, 
+                fontSize: '1.2rem',
+                textAlign: 'center',
+              }}
+            >
+              {zh ? '递归算法' : 'Algorithm'}
+            </Typography>
+        </Box>
+      </Box>
+      )}
+      {/* 主页面布局 - LeetCode风格左右分栏 */}
+      <div
+        className="lc-left"
+        style={{ width: `${leftPct}%`, minWidth: 0, position: 'relative', height: '100%', display: 'flex' }}
+      >
       {/* 左侧导航栏 */}
       <Box
         sx={{
@@ -2274,6 +2957,7 @@ useEffect(() => {
           transition: 'width 0.3s ease, border-right 0.3s ease',
           position: 'relative',
           overflow: 'hidden',
+            zIndex: 1001, // 确保在侧拉栏之上
         }}
       >
         {/* 收起/展开按钮 */}
@@ -2312,7 +2996,7 @@ useEffect(() => {
                 transition: 'opacity 0.3s ease',
               }}
             >
-              演示
+              {zh ? '演示' : 'Warm up'}
             </Button>
             
             {/* <Box
@@ -2326,7 +3010,7 @@ useEffect(() => {
             /> */}
             
             
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography
                 variant="body2"
                 sx={{
@@ -2395,10 +3079,10 @@ useEffect(() => {
                   测试
                 </Button>
               </Box>
-            </Box>
+            </Box> */}
 
             {/* 组2 */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {/* <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography
                 variant="body2"
                 sx={{
@@ -2467,7 +3151,7 @@ useEffect(() => {
                   测试
                 </Button>
               </Box>
-            </Box>
+            </Box> */}
 
   {/* 组2 */}
   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
@@ -2484,7 +3168,7 @@ useEffect(() => {
                   whiteSpace: 'nowrap',
                 }}
               >
-                贪心
+                {zh ? '贪心' : 'Greed'}
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 <Button
@@ -2502,7 +3186,7 @@ useEffect(() => {
                     transition: 'opacity 0.3s ease',
                   }}
                 >
-                  动画
+                  {zh ? '动画' : 'Animation'}
                 </Button>
                 <Button
                   size="small"
@@ -2519,7 +3203,7 @@ useEffect(() => {
                     transition: 'opacity 0.3s ease',
                   }}
                 >
-                  画图 
+                  {zh ? '画图' : 'SketchMind'}
                 </Button>
                 <Button
                   size="small"
@@ -2536,7 +3220,7 @@ useEffect(() => {
                     transition: 'opacity 0.3s ease',
                   }}
                 >
-                  测试
+                  {zh ? '测试' : 'Post task'}
                 </Button>
               </Box>
             </Box>
@@ -2645,57 +3329,137 @@ useEffect(() => {
                 </Button>
               </Box>
             </Box> */}
-          </Box>
         </Box>
       </Box>
 
-      {/* 内容区域 */}
-      <div className="flex-1 flex">
-        {/* 左侧内容 - 可折叠 */}
+        {/* 翻译功能（已移动到顶部左侧） */}
+        {false && (
+        <Box sx={{ p: 1, borderTop: 1, borderColor: 'divider' }} />
+        )}
+      </Box>
+
+        {/* 画布区域 + 左侧底部 AI 结果栏 */}
         <div 
-          className={`relative bg-gray-100 transition-all duration-300 ease-in-out ${
-            isLeftPanelCollapsed ? 'w-0 overflow-hidden' : 'w-2/5'
-          }`}
+          className="flex-1"
+          ref={leftColumnRef}
           style={{
-            width: isLeftPanelCollapsed ? '0px' : undefined,
-            minWidth: isLeftPanelCollapsed ? '0px' : undefined,
-            maxWidth: isLeftPanelCollapsed ? '0px' : undefined,
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            borderRight: '1px solid #eee',
+            background: '#fff',
           }}
         >
-          <MarkdownWithDrawing
-            markdown={zh?selectedText:selectedTextEN}
-            zh={zh}
-            onToggleZh={() => setZh(v => !v)}
-            // setZh={setZh}
-            onAlgorithmSelect={async (alg) => {
-              setStoryAlgorithm(alg);
-              if (mode === 'story') {
-                await resetStoryForAlgorithm(alg,zh);
-              }
-            }}
-            isCollapsed={isLeftPanelCollapsed}
-            onToggleCollapse={() => setIsLeftPanelCollapsed(!isLeftPanelCollapsed)}
-          />
-        </div>
+          {/* 顶部自定义工具栏（移除占位，改为覆盖在遮挡条之上） */}
+          {false && <Box />}
 
-        
+          {/* 画布内容区域 */}
+          <div
+            className="bg-white relative w-full"
+        ref={rightPaneRef}
+        style={{
+          touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
+          overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
+          overflow: 'hidden',            // 避免绘制时容器产生滚动条
+          contain: 'layout paint',       // 限定重绘范围，减少抖动
+          flex: '1 1 auto',
+          minHeight: 0,
+        }}
+      >
 
-        {/* 右侧内容 - 自动扩展 */}
-        <div
-          className={`bg-white relative transition-all duration-300 ease-in-out ${
-            isLeftPanelCollapsed ? 'w-full' : 'w-3/5'
-          }`}
-          ref={rightPaneRef}
-          style={{
-            width: isLeftPanelCollapsed ? '100%' : undefined,
-            minWidth: isLeftPanelCollapsed ? '100%' : undefined,
-            marginLeft: isLeftPanelCollapsed ? 0 : '-20px', // 当左侧面板展开时，画布往左移动
-            touchAction: 'none',           // 禁用浏览器默认触控手势，稳定手写
-            overscrollBehavior: 'contain', // 阻止 iOS 橡皮筋滚动影响布局
-            overflow: 'hidden',            // 避免绘制时容器产生滚动条
-            contain: 'layout paint',       // 限定重绘范围，减少抖动
+        {/* 顶部统一遮挡条（避免原生控件残影；不拦截鼠标） */}
+        {/* <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 120,
+            bgcolor: '#fff',
+            zIndex: 25,
+            pointerEvents: 'none',
+          }}
+        /> */}
+
+        {/* 覆盖在遮挡条之上的工具栏（不占用内容高度） */}
+        {/* <Box
+          sx={{
+            position: 'absolute',
+            top: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 26,
+            display: 'flex',
+            alignItems: 'center',
+            gap: isTablet ? 1.5 : 1.25,
+            bgcolor: 'rgba(255,255,255,0.98)',
+            // border: '1px solid #e0e0e0',
+            borderRadius: 2,
+            px: isTablet ? 1.25 : 1,
+            py: isTablet ? 0.75 : 0.5,
+            // 提升触控命中区域（只影响本工具条内的 IconButton）
+            '& .MuiIconButton-root': {
+              minWidth: isTablet ? 44 : 36,
+              minHeight: isTablet ? 44 : 36,
+            },
           }}
         >
+          <Tooltip title={t.toolbar_mode}>
+            <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <TuneIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_move}>
+            <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <PanToolIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_select}>
+            <IconButton size="medium" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <NavigationIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_rect}>
+            <IconButton size="medium" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <CropSquareIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_ellipse}>
+            <IconButton size="medium" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <CircleOutlinedIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_arrow}>
+            <IconButton size="medium" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <ArrowRightAltIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_line}>
+            <IconButton size="medium" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <HorizontalRuleIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_draw}>
+            <IconButton size="medium" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <CreateIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_text}>
+            <IconButton size="medium" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <TextFieldsIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_eraser}>
+            <IconButton size="medium" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <EraserIcon sx={{ fontSize: '36px', position: 'relative', top: -2 }} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t.toolbar_library}>
+            <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
+              <SchemaIcon fontSize="medium" />
+            </IconButton>
+          </Tooltip>
+        </Box> */}
 
         {/* 面板折叠时的展开指示器 - 放在左下角，不挡住导航栏 */}
         {isLeftPanelCollapsed && (
@@ -2707,7 +3471,7 @@ useEffect(() => {
               zIndex: 1000,
             }}
           >
-            <Tooltip title="展开面板" placement="right">
+            <Tooltip title="展开侧边栏" placement="right">
               <IconButton
                 onClick={() => setIsLeftPanelCollapsed(false)}
                 sx={{
@@ -2802,56 +3566,17 @@ useEffect(() => {
           }}
         /> */}
 
-        {/* 遮挡 Excalidraw 左上角菜单按钮的白色遮挡物 */}
-         <Box
-          sx={{
-            position: 'absolute',
-            top: 6,
-            left: isLeftPanelCollapsed ? 6 : -14, // 根据左侧面板状态调整位置
-            width: 64,
-            height: 64,
-            bgcolor: '#fff',
-            borderRadius: 1,
-            zIndex: 20,
-            pointerEvents: 'auto', // 阻止点击到底层按钮
-            transition: 'left 0.3s ease-in-out',
-          }}
-        />
+        {/* 遮挡物已移除，避免滚动画布时遮住用户图形 */}
+        {false && (
+          <Box sx={{ position: 'absolute' }} />
+        )}
 
-        {/* 遮挡 Excalidraw 右上角的 Library 按钮 */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 6,
-            right: isLeftPanelCollapsed ? 6 : 26, // 根据左侧面板状态调整位置
-            width: 120,
-            height: 64,
-            bgcolor: '#fff',
-            borderRadius: 1,
-            zIndex: 20,
-            pointerEvents: 'auto',
-            transition: 'right 0.3s ease-in-out',
-          }}
-        />
+        {false && (
+          <Box sx={{ position: 'absolute' }} />
+        )}
 
-        {/* 当左侧面板展开时，用白色方框遮住原来的工具栏位置 */}
-        {!isLeftPanelCollapsed && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 12,
-              left: isLeftPanelCollapsed ? '50%' : '60%',
-              transform: 'translateX(-50%)',
-              width: '100%', // 自适应右侧面板宽度
-              maxWidth: '90%', // 限制最大宽度，避免超出面板
-              height: 81,
-              bgcolor: '#fff',
-              borderRadius: 1,
-              zIndex: 25,
-              pointerEvents: 'none',
-              // boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            }}
-          />
+        {false && !isLeftPanelCollapsed && (
+          <Box sx={{ position: 'absolute' }} />
         )}
 
         {/* 覆盖 Excalidraw 顶部中间原生工具栏 */}
@@ -2870,153 +3595,25 @@ useEffect(() => {
             borderBottomRightRadius: 6,
           }}
         /> */}
+        {false && (
+          <Box sx={{ position: 'absolute' }} />
+        )}
+        {/* 自定义简化工具栏（已迁移到画布上方固定栏） */}
+        {false && (
+          <Box />
+        )}
 
-        {/* 自定义简化工具栏（根据左侧面板状态动态调整位置） */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 12,
-            left: isLeftPanelCollapsed ? '50%' : '60%',
-            transform: 'translateX(-50%)',
-            zIndex: 30,
-            bgcolor: 'rgba(255,255,255,1)',
-            borderRadius: 1,
-            p: 0.5,
-            display: 'flex',
-            flexDirection: 'row',
-            gap: 1.25,
-            width: 'auto', // 自适应内容宽度
-            minWidth: 200, // 最小宽度保证按钮可见
-            maxWidth: '90%', // 最大宽度限制，避免超出面板
-            height: 72,
-            transition: 'left 0.3s ease-in-out',
-          }}
-        >
-          {/* <Tooltip title="模式">
-            <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <TuneIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="移动">
-            <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <PanToolIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="选择">
-            <IconButton size="medium" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <NavigationIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="矩形">
-            <IconButton size="medium" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <CropSquareIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="椭圆">
-            <IconButton size="medium" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <CircleOutlinedIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="箭头">
-            <IconButton size="medium" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <ArrowRightAltIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="连线">
-            <IconButton size="medium" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <HorizontalRuleIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="自由绘制">
-            <IconButton size="medium" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <CreateIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="文字">
-            <IconButton size="medium" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <TextFieldsIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="橡皮擦">
-            <IconButton size="medium" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <EraserIcon sx={{ fontSize: '36px', position: 'relative', top: -2 }} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="素材库">
-            <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
-              <SchemaIcon fontSize="medium" />
-            </IconButton>
-          </Tooltip> */}
-<Tooltip title={t.toolbar_mode}>
-  <IconButton size="medium" onClick={() => setIsModeDialogOpen(true)} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <TuneIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_move}>
-  <IconButton size="medium" onClick={() => setTool('hand')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <PanToolIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_select}>
-  <IconButton size="medium" onClick={() => setTool('selection')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <NavigationIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_rect}>
-  <IconButton size="medium" onClick={() => setPendingInsertTool('rectangle')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <CropSquareIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_ellipse}>
-  <IconButton size="medium" onClick={() => setPendingInsertTool('ellipse')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <CircleOutlinedIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_arrow}>
-  <IconButton size="medium" onClick={() => setTool('arrow')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <ArrowRightAltIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_line}>
-  <IconButton size="medium" onClick={() => setTool('line')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <HorizontalRuleIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_draw}>
-  <IconButton size="medium" onClick={() => setTool('freedraw')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <CreateIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_text}>
-  <IconButton size="medium" onClick={() => setTool('text')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <TextFieldsIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_eraser}>
-  <IconButton size="medium" onClick={() => setTool('eraser')} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <EraserIcon sx={{ fontSize: '36px', position: 'relative', top: -2 }} />
-  </IconButton>
-</Tooltip>
-
-<Tooltip title={t.toolbar_library}>
-  <IconButton size="medium" onClick={openLibrary} sx={{ color: 'rgb(84, 83, 84)' }}>
-    <SchemaIcon fontSize="medium" />
-  </IconButton>
-</Tooltip>
-
-        </Box>
+        {/* 画布上方固定工具栏（已移除：使用左列顶部固定栏） */}
+        {false && <Box />}
 
         {/* 模式选择弹窗（美观卡片样式） */}
-        <Modal open={isModeDialogOpen} onClose={() => setIsModeDialogOpen(false)}>
+        <Modal 
+          open={isModeDialogOpen} 
+          onClose={() => setIsModeDialogOpen(false)}
+          sx={{ zIndex: 12000 }}
+          BackdropProps={{ sx: { zIndex: 11990, backgroundColor: 'rgba(0,0,0,0.45)' } }}
+          slotProps={{ backdrop: { sx: { zIndex: 11990, backgroundColor: 'rgba(0,0,0,0.45)' } } } as any}
+        >
           <Box
             sx={{
               position: 'absolute',
@@ -3028,6 +3625,8 @@ useEffect(() => {
               boxShadow: 10,
               p: 3,
               minWidth: 560,
+              zIndex: 12010,
+              pointerEvents: 'auto',
             }}
           >
             <Typography variant="h6" sx={{ mb: 2, textAlign: 'center', fontWeight: 600 }}>选择模式</Typography>
@@ -3077,65 +3676,42 @@ useEffect(() => {
           </Box>
         </Modal>
 
-        <Excalidraw 
-          excalidrawAPI={(api) => setExcalidrawAPI(api)}
-          onChange={(elements, appState, files) => {
-            // 实时保存画布变化
-            if (api) {
-              // console.log(`🎨 Excalidraw onChange 事件 - 模式: ${mode}, 元素数: ${elements.length}`);
-              // 若存在 AI Ghost，用户一旦作画（元素数量增加）则清除 Ghost
-              try {
-                if (aiGhostActiveRef.current && elements.length > lastElementsCountRef.current) {
-                  setAiGhost(null);
-                  aiGhostActiveRef.current = false;
-                }
-              } catch {}
-              // 使用防抖保存，避免频繁保存
-              if (autoSaveTimerRef.current) {
-                clearTimeout(autoSaveTimerRef.current);
-              }
-              autoSaveTimerRef.current = setTimeout(() => {
-                // 只有在正确的模式下才保存，并且确保不是正在切换模式
-                if ((mode === 'story' || mode === 'explore') && !isModeSwitching.current) {
-                  // console.log(`💾 自动保存 - 模式: ${mode}`);
-                saveCurrentScene();
-                } else {
-                  // console.log(`⚠️ 跳过自动保存 - 模式: ${mode}, 是否正在切换: ${isModeSwitching.current}`);
-                }
-              }, 300); // 300ms 后保存
-            }
-          }}
-          // 移动设备适配配置
-         
-          UIOptions={{
-            tools: { image: false },               // 隐藏工具（移除不受支持的 'line' 字段）
-            // canvasActions: {
-            //   saveToActiveFile: true,
-            //   loadScene: false,
-            //   export: false,
-            //   saveAsImage: false,
-            //   clearCanvas: true,
-            // },
-            dockedSidebarBreakpoint: 100000, // 移动设备上不显示侧边栏
-            welcomeScreen: false, // 禁用欢迎屏幕
-          }}
-          // 触摸设备优化
-          gridModeEnabled={false} // 移动设备上禁用网格模式
-          zenModeEnabled={false} // 移动设备上禁用禅模式
-          viewModeEnabled={false} // 移动设备上禁用视图模式
-          // 移动设备特定的应用状态
-          initialData={{
-            appState: {
-              viewBackgroundColor: "#fff",
-              // 移动设备上禁用一些功能
-              showWelcomeScreen: false,
-              // 触摸设备优化
-              penMode: false,
-              gridSize: undefined,
-            },
-            scrollToContent: true
-          }}
-        />
+        {/* 嵌入自定义 Canvas 画布 */}
+        <Box sx={{ position: 'relative', width: '100%', height: '100%', minHeight: 400 }}>
+          <iframe
+            src="/canvas"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none' }}
+            title="SketchMind Canvas"
+          />
+        </Box>
+
+        {/* Guides Overlay: shake boxes and glow pointers (non-interactive) */}
+        <Box
+          sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 30 }}
+        >
+          {guides.map(g => (
+            <Box
+              key={`${g.id}-${g.type}`}
+              className={g.type === 'shake' || g.type === 'both' ? 'guide-shake' : undefined}
+              sx={{
+                position: 'absolute',
+                left: g.screenX,
+                top: g.screenY,
+                width: g.screenW,
+                height: g.screenH,
+                border: g.type === 'shake' || g.type === 'both' ? '2px dashed rgba(255,0,0,.9)' : 'none',
+                borderRadius: 2,
+              }}
+            >
+              {(g.type === 'glow' || g.type === 'both') && (
+                <Box sx={{ position: 'absolute', left: g.dotX, top: g.dotY }}>
+                  <div className="guide-glow-dot" />
+                  <div className="guide-glow-ring" />
+                </Box>
+              )}
+            </Box>
+          ))}
+        </Box>
 
         {/* 画布点击插入覆盖层：仅在待插入模式开启时显示 */}
         {pendingInsertTool === 'rectangle' && (
@@ -3269,246 +3845,13 @@ useEffect(() => {
           />
         )}
 
-        {/* 底部素材库面板 */}
-        {showLibraryBottom && (
-          <Box
-            sx={{
-              position: 'absolute',
-              left: '50%',
-              bottom: 80,
-              transform: 'translateX(-50%)',
-              zIndex: 35,
-              bgcolor: 'rgba(255,255,255,0.98)',
-              borderRadius: 1,
-              boxShadow: 3,
-              p: 1,
-              width: '80%',
-              maxWidth: 900,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>素材库</Typography>
-              <Button size="small" onClick={() => setShowLibraryBottom(false)}>关闭</Button>
-            </Box>
-            <Box sx={{
-              display: 'grid',
-              gridAutoFlow: 'column',
-              gridTemplateRows: 'repeat(2, auto)',
-              gap: 1,
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              p: 0.5,
-              alignItems: 'start'
-            }}>
-              {libraryItems && libraryItems.length > 0 ? (
-                libraryItems.slice().reverse().map((item: any, idx: number) => {
-                  const origIdx = libraryItems.length - 1 - idx;
-                  const thumbId = String(item?.id ?? `item-${origIdx}`);
-                  return (
-                  <Box key={thumbId} sx={{ textAlign: 'center', width: 120 }}>
-                    <LibraryItemThumb
-                      item={item}
-                      thumbId={thumbId}
-                      width={110}
-                      height={72}
-                      onClick={() => {
-                        setPendingLibraryItem(item);
-                        // 预计算素材包围盒，用于 Ghost 预览
-                        try {
-                          const els: any[] = item?.elements || [];
-                          if (els.length) {
-                            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                            for (const el of els) {
-                              const x = typeof el.x === 'number' ? el.x : 0;
-                              const y = typeof el.y === 'number' ? el.y : 0;
-                              const w = typeof el.width === 'number' ? el.width : 0;
-                              const h = typeof el.height === 'number' ? el.height : 0;
-                              minX = Math.min(minX, x);
-                              minY = Math.min(minY, y);
-                              maxX = Math.max(maxX, x + w);
-                              maxY = Math.max(maxY, y + h);
-                            }
-                            const w = Math.max(1, maxX - minX);
-                            const h = Math.max(1, maxY - minY);
-                            // 归一化元素到局部坐标系（以 minX/minY 为原点）
-                            const mapped = els.map((el: any) => {
-                              const x = (el.x ?? 0) - minX;
-                              const y = (el.y ?? 0) - minY;
-                              return {
-                                type: el.type,
-                                x, y,
-                                width: el.width ?? 0,
-                                height: el.height ?? 0,
-                                points: Array.isArray(el.points) ? el.points : undefined,
-                                text: el.text,
-                                fontSize: el.fontSize ?? 18,
-                                strokeColor: el.strokeColor ?? '#000',
-                                backgroundColor: el.backgroundColor ?? 'transparent',
-                                strokeWidth: el.strokeWidth ?? 2,
-                                strokeStyle: el.strokeStyle ?? 'solid',
-                              };
-                            });
-                            setLibraryGhost({ width: w, height: h, minX, minY, elements: mapped });
-                          } else {
-                            setLibraryGhost(null);
-                          }
-                        } catch {
-                          setLibraryGhost(null);
-                        }
-                        setShowLibraryBottom(false);
-                      }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5, maxWidth: 110 }} noWrap>
-                      {libraryCaptions[origIdx] ?? item?.name ?? `Item ${origIdx + 1}`}
-                    </Typography>
-                  </Box>
-                );})
-              ) : (
-                <Typography variant="caption" color="text.secondary">暂无素材</Typography>
-              )}
-            </Box>
-          </Box>
-        )}
-
-        {/* 库项点击后在画布点击位置插入 */}
-        {pendingLibraryItem && (
-          <Box
-            onClick={async (e) => {
-              if (!excalidrawAPI) return;
-              try {
-                const appState = excalidrawAPI.getAppState();
-                const scrollX = (appState && (appState as any).scrollX) || 0;
-                const scrollY = (appState && (appState as any).scrollY) || 0;
-                const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-                const rect = rightPaneRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const clientX = (e as any).clientX as number;
-                const clientY = (e as any).clientY as number;
-                const sceneX = scrollX + (clientX - rect.left) / zoom;
-                const sceneY = scrollY + (clientY - rect.top) / zoom;
-
-                // 计算库元素的包围盒，居中插入
-                const elements: any[] = pendingLibraryItem?.elements || [];
-                if (!elements.length) return;
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                for (const el of elements) {
-                  if (typeof el.x === 'number' && typeof el.y === 'number') {
-                    minX = Math.min(minX, el.x);
-                    minY = Math.min(minY, el.y);
-                    const w = typeof el.width === 'number' ? el.width : 0;
-                    const h = typeof el.height === 'number' ? el.height : 0;
-                    maxX = Math.max(maxX, el.x + w);
-                    maxY = Math.max(maxY, el.y + h);
-                  }
-                }
-                const cx = (minX + maxX) / 2;
-                const cy = (minY + maxY) / 2;
-                const dx = sceneX - cx;
-                const dy = sceneY - cy;
-                const cloned = elements.map((el: any) => ({ ...el, x: el.x + dx, y: el.y + dy }));
-
-                excalidrawAPI.updateScene({
-                  elements: [...excalidrawAPI.getSceneElements(), ...cloned as any],
-                });
-                saveCurrentScene();
-              } finally {
-                setPendingLibraryItem(null);
-                setLibraryGhost(null);
-              }
-            }}
-            onMouseMove={(e) => {
-              if (!excalidrawAPI) return;
-              const appState = excalidrawAPI.getAppState();
-              const zoom = (appState && ((appState as any).zoom?.value ?? (appState as any).zoom)) || 1;
-              const rect = rightPaneRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              const clientX = (e as any).clientX as number;
-              const clientY = (e as any).clientY as number;
-              setInsertGhost({ x: clientX - rect.left, y: clientY - rect.top, zoom });
-            }}
-            onMouseLeave={() => setInsertGhost(null)}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 40,
-              cursor: 'crosshair',
-              background: 'transparent',
-            }}
-          />
-        )}
-        {/* Ghost 预览素材（完整形状渲染） */}
-        {pendingLibraryItem && insertGhost && libraryGhost && (
-          <Box
-            sx={{ position: 'absolute', zIndex: 41, pointerEvents: 'none', top: 0, left: 0, right: 0, bottom: 0 }}
-          >
-            <svg
-              width={libraryGhost.width * insertGhost.zoom}
-              height={libraryGhost.height * insertGhost.zoom}
-              viewBox={`0 0 ${libraryGhost.width} ${libraryGhost.height}`}
-              style={{
-                position: 'absolute',
-                top: insertGhost.y - (libraryGhost.height * insertGhost.zoom) / 2,
-                left: insertGhost.x - (libraryGhost.width * insertGhost.zoom) / 2,
-                overflow: 'visible',
-                opacity: 0.9,
-              }}
-            >
-              <defs>
-                <marker id="lib-ghost-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-                  <path d="M0,0 L10,5 L0,10 z" fill="#666" />
-                </marker>
-              </defs>
-              {libraryGhost.elements.map((el, idx) => {
-                const stroke = el.strokeColor || '#000';
-                const fill = el.backgroundColor && el.backgroundColor !== 'transparent' ? el.backgroundColor : 'none';
-                const sw = Math.max(1, el.strokeWidth || 2);
-                const dash = el.strokeStyle === 'dashed' ? '6,4' : el.strokeStyle === 'dotted' ? '2,4' : undefined;
-                if (el.type === 'rectangle' || el.type === 'image') {
-                  return (
-                    <rect key={idx} x={el.x} y={el.y} width={el.width} height={el.height} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
-                  );
-                }
-                if (el.type === 'ellipse') {
-                  return (
-                    <ellipse key={idx} cx={el.x + el.width / 2} cy={el.y + el.height / 2} rx={el.width / 2} ry={el.height / 2} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
-                  );
-                }
-                if (el.type === 'diamond') {
-                  const points = [
-                    [el.x + el.width / 2, el.y],
-                    [el.x + el.width, el.y + el.height / 2],
-                    [el.x + el.width / 2, el.y + el.height],
-                    [el.x, el.y + el.height / 2],
-                  ];
-                  return (
-                    <polygon key={idx} points={points.map(p => p.join(',')).join(' ')} stroke={stroke} fill={fill} strokeWidth={sw} strokeDasharray={dash} />
-                  );
-                }
-                if (el.type === 'line' || el.type === 'arrow') {
-                  const baseX = el.x;
-                  const baseY = el.y;
-                  const pts: [number, number][] = Array.isArray(el.points) && el.points.length ? el.points.map((p: [number, number]) => [baseX + p[0], baseY + p[1]]) : [[baseX, baseY], [baseX + (el.width || 0), baseY + (el.height || 0)]];
-                  return (
-                    <polyline key={idx} points={pts.map(p => p.join(',')).join(' ')} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={dash} markerEnd={el.type === 'arrow' ? 'url(#lib-ghost-arrow)' : undefined} />
-                  );
-                }
-                if (el.type === 'text' && el.text) {
-                  return (
-                    <text key={idx} x={el.x} y={el.y + (el.fontSize || 18)} fontSize={el.fontSize || 18} fill={stroke}>
-                      {el.text}
-                    </text>
-                  );
-                }
-                return null;
-              })}
-            </svg>
-          </Box>
-        )}
+        {/* 底部素材库面板（已移除渲染） */}
+        {/* 库项点击后在画布点击位置插入（已禁用） */}
+        {/* Ghost 预览素材（已禁用） */}
         {/* <Excalidraw excalidrawAPI={(api) => setExcalidrawAPI(api)} /> */}
-        
+
+        {/* 自定义鼠标光标环已移除 */}
+
         {/* 调试信息显示 */}
         {/* <Box
           sx={{
@@ -3615,35 +3958,10 @@ useEffect(() => {
           </Box>
         )} */}
 
-        {/* 根据mode显示不同的组件 */}
-        {mode === 'story' ? (
-          <StoryPlayer 
-            steps={steps} 
-            onStepChange={handleStepChange} 
-            stepStatuses={stepStatuses}
-            setStepStatuses={setStepStatuses}
-            onCheck={onCheck}
-            onNextDraw={onNextDraw}
-            notes={notes}
-            isNotesOpen={isNotesOpen}
-            stepNotes={stepNotes}
-            currentStepIndex={currentStepIndex}
-            stepChecks={stepChecks}
-            containerRef={rightPaneRef}
-            titles={storyAlgorithm === 'iter' ? titles_iter : undefined}
-            hints={storyAlgorithm === 'iter' ? hints_iter : undefined}
-            isLeftPanelCollapsed={isLeftPanelCollapsed}
-            zh={zh}
-          />
-                 ) : (
-           <ExploreMode 
-             onCheck={onCheck}
-             onNextDraw={onNextDraw}
-             notes={notes}
-             containerRef={rightPaneRef}
-             isLeftPanelCollapsed={isLeftPanelCollapsed}
-           />
-         )}
+        {/* 画布区域内不再渲染 StoryPlayer；仅在探索模式渲染 ExploreMode */}
+        {/* ExploreMode 面板已移除，不再在探索模式中显示 */}
+
+        
 
         {/* AI 新增元素闪烁动画层（仅显示 1.2s） */}
         {aiFlash && excalidrawAPI && (
@@ -3831,9 +4149,395 @@ useEffect(() => {
             }}
           />
         )} */}
+          </div>
+
+          {/* 左侧底部分割线（可拖拽） */}
+          <div
+            className="lc-left-bottom-resizer"
+            ref={leftBottomResizerRef}
+            onMouseDown={(e) => { e.preventDefault(); setIsLeftAiResizing(true); }}
+            onPointerDown={(e) => { e.preventDefault(); (e.currentTarget as any).setPointerCapture?.((e as any).pointerId); setIsLeftAiResizing(true); }}
+            onPointerMove={(e) => {
+              if (!isLeftAiResizing || !leftColumnRef.current) return;
+              const rect = leftColumnRef.current.getBoundingClientRect();
+              const newHeight = Math.round(rect.bottom - e.clientY);
+              const clamped = Math.max(80, Math.min(400, newHeight));
+              setLeftAiHeight(clamped);
+            }}
+            onPointerUp={(e) => { (e.currentTarget as any).releasePointerCapture?.((e as any).pointerId); setIsLeftAiResizing(false); }}
+            onTouchStart={(e) => { e.preventDefault(); setIsLeftAiResizing(true); }}
+            onTouchMove={(e) => {
+              if (!isLeftAiResizing || !leftColumnRef.current) return;
+              e.preventDefault();
+              const rect = leftColumnRef.current.getBoundingClientRect();
+              const touch = e.touches && e.touches[0];
+              if (!touch) return;
+              const newHeight = Math.round(rect.bottom - touch.clientY);
+              const clamped = Math.max(80, Math.min(400, newHeight));
+              setLeftAiHeight(clamped);
+            }}
+            onTouchEnd={() => setIsLeftAiResizing(false)}
+            style={{ height: 8, cursor: 'row-resize', background: '#fff', width: '100%', touchAction: 'none', position: 'relative', zIndex: 1400, userSelect: 'none', boxShadow: 'inset 0 1px 0 #ddd, inset 0 -1px 0 #ddd', pointerEvents: isModeDialogOpen ? 'none' : 'auto' }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 3px)',
+                columnGap: 2,
+              }}
+            >
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: '#ccc' }} />
+              ))}
+            </div>
+          </div>
+
+          {/* 左侧底部分割线的“隐形命中区”（绝对定位，不改变样式） */}
+          <div
+            aria-hidden
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsLeftAiResizing(true); }}
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsLeftAiResizing(true); }}
+            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setIsLeftAiResizing(true); }}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: `${leftAiHeight}px`, transform: 'translateY(28px)', height: 56, background: 'transparent', cursor: 'row-resize', zIndex: 9000, pointerEvents: isModeDialogOpen ? 'none' : 'auto' }}
+          />
+          {/* 左侧底部 AI 结果栏 */}
+          <Box sx={{ flex: '0 0 auto', height: `${leftAiHeight}px`, borderTop: 1, borderColor: 'divider', bgcolor: '#fafafa', p: 1.25, overflow: 'auto' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{zh ? '提示' : 'Feedback'}</Typography>
+              {stepChecks[currentStepIndex] && (
+                <Box component="span" sx={{ fontSize: 12, color: stepChecks[currentStepIndex].isValid ? 'success.main' : 'error.main', border: '1px solid', borderColor: stepChecks[currentStepIndex].isValid ? 'success.light' : 'error.light', px: 0.75, py: 0.25, borderRadius: 1 }}>
+                  {stepChecks[currentStepIndex].isValid ? (zh ? '检查：✅' : 'Check: ✅') : (zh ? '检查：❌' : 'Check: ❌')}
+                </Box>
+              )}
+            </Box>
+            {checkMsg && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                {checkMsg}
+              </Typography>
+            )}
+            {displayNote ? (
+              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isErrorNote ? '#f7f7f7' : '#fff3e0', border: '1px solid', borderColor: isErrorNote ? '#e0e0e0' : '#ffb74d' }}>
+                <Typography variant="body2" whiteSpace="pre-line" sx={{ color: isErrorNote ? 'text.secondary' : 'text.primary', fontSize: '0.875rem' }}>
+                  {displayNote}
+                </Typography>
+              </Box>
+            ) : (
+              (() => {
+                if (!isClient) {
+                  return <Typography variant="caption" color="text.secondary">{zh ? '暂无提示' : 'No hints yet'}</Typography>;
+                }
+                if (currentScaffoldingMode === 'High') {
+                  if (hasSelectionError) {
+                    return <Typography variant="caption" color="error.main">{zh ? '选择错误，请重新选择' : 'Wrong choice, please select again'}</Typography>;
+                  }
+                  return <Typography variant="caption" color="text.secondary">{zh ? '点击选中应该首先合并的节点' : 'Click to select the node that should be merged first'}</Typography>;
+                }
+                return <Typography variant="caption" color="text.secondary">{zh ? '暂无提示' : 'No hints yet'}</Typography>;
+              })()
+            )}
+          </Box>
         </div>
       </div>
+
+      {/* 垂直分割线（可拖拽） */}
+      <div
+        className="lc-resizer"
+        onMouseDown={() => setIsResizing(true)}
+        onPointerDown={(e) => { e.preventDefault(); (e.currentTarget as any).setPointerCapture?.((e as any).pointerId); setIsResizing(true); }}
+        onPointerUp={(e) => { (e.currentTarget as any).releasePointerCapture?.((e as any).pointerId); setIsResizing(false); }}
+        onTouchStart={(e) => { e.preventDefault(); setIsResizing(true); }}
+        onTouchEnd={() => setIsResizing(false)}
+        onPointerMove={(e) => {
+          if (!isResizing || !containerRef.current) return;
+          const rect = containerRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+          setLeftPct(next);
+        }}
+        onTouchMove={(e) => {
+          if (!isResizing || !containerRef.current) return;
+          const rect = containerRef.current.getBoundingClientRect();
+          const touch = e.touches && e.touches[0];
+          if (!touch) return;
+          const x = touch.clientX - rect.left;
+          const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+          setLeftPct(next);
+        }}
+        style={{ display: 'none' }}
+      />
+
+      {/* 垂直分隔线的“隐形命中区”（不改变样式，仅提高可命中范围） */}
+      <div
+        aria-hidden
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); }}
+        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); }}
+        onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); }}
+        style={{ position: 'absolute', top: 57, bottom: 0, left: `${leftPct}%`, transform: 'translateX(-28px)', width: 56, background: 'transparent', cursor: 'col-resize', zIndex: 1500, pointerEvents: 'auto' }}
+      />
+
+      {/* 可见垂直分隔条（带点 grip），不改变布局，仅作视觉与更易拖拽的热点区域 */}
+      <div
+        aria-hidden
+        onMouseDown={() => setIsResizing(true)}
+        onPointerDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+        onTouchStart={(e) => { e.preventDefault(); setIsResizing(true); }}
+        style={{
+          position: 'absolute',
+          top: 57,
+          bottom: 0,
+          left: `calc(${leftPct}% - 4px)`,
+          width: 8,
+          cursor: 'col-resize',
+          zIndex: 2000,
+          touchAction: 'none',
+          // 中间白色，左右细线
+          background: '#fff',
+          boxShadow: 'inset 1px 0 0 #ddd, inset -1px 0 0 #ddd',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'grid',
+            gridTemplateRows: 'repeat(5, 3px)',
+            rowGap: 2,
+          }}
+        >
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: '#ccc' }} />
+          ))}
+        </div>
+      </div>
+
+      {/* 右侧：问题/算法（上栏 Tab 切换） + 下栏 Story 步骤 */}
+      <div
+        className="lc-right"
+        ref={rightSplitRef}
+        style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #eee', background: '#fff' }}
+      >
+        {/* 上栏（Tab 切换）：问题 / 直觉 / 算法 */}
+        <Box sx={{ flex: `0 0 ${topPct}%`, minHeight: 0, borderBottom: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>
+            <Tabs
+              value={rightTopTab}
+              onChange={(_, v) => setRightTopTab(v)}
+              aria-label="problem algorithm tabs"
+            >
+              <Tab label={zh ? '问题' : 'Problem'} value="problem" />
+              <Tab label={zh ? '直觉' : 'Intuition'} value="intuition" />
+              <Tab label={zh ? '算法' : 'Algorithm'} value="algorithm" />
+            </Tabs>
+          </Box>
+          <Box sx={{ p: 1.5, overflow: 'auto', flex: 1, '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-track': { bgcolor: 'rgba(0,0,0,0.1)' }, '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(165, 175, 76, 0.3)', borderRadius: '2px' } }}>
+            {rightTopTab === 'problem' ? (
+              <>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#8b7355' }}>
+                  {zh ? '📋 合并有序链表' : '📋 Merge Two Sorted Lists'}
+                </Typography>
+                <Typography variant="body1" sx={{ lineHeight: 1.6, mb: 2 }}>
+                  {zh 
+                    ? '给定两个有序链表的头节点 list1 和 list2。将这两个链表合并为一个有序链表。合并后的链表应通过将两个链表的节点拼接在一起形成。返回合并后的链表的头节点。'
+                    : 'You are given the heads of two sorted linked lists list1 and list2. Merge the two lists into one sorted list. The list should be made by splicing together the nodes of the first two lists. Return the head of the merged linked list.'
+                  }
+                </Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: '#333' }}>
+                  {zh ? ' 示例' : 'Example'}
+                </Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace', lineHeight: 1.8 }}>
+                  {zh 
+                    ? '输入：list1 = [1,2,4],\n list2 = [1,3,4]'
+                    : 'Input: list1 = [1,2,4],\n list2 = [1,3,4]'
+                  }
+                </Typography>
+              </>
+            ) : rightTopTab === 'intuition' ? (
+              <>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#6b7c32' }}>
+                  {zh ? '🧠 直觉' : '🧠 Intuition'}
+                </Typography>
+                <Typography variant="body2" sx={{ lineHeight: 1.6, mb: 2 }}>
+                  {zh 
+                    ? '我们可以递归地定义两个链表的合并操作结果如下（避免处理空链表的特殊情况）：'
+                    : 'We can recursively define the result of a merge operation on two lists as the following (avoiding the corner case logic surrounding empty lists):'
+                  }
+                </Typography>
+                <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, mb: 2, border: '1px solid #e0e0e0' }}>
+                  <Typography component="pre" variant="body2" sx={{ fontFamily: 'monospace', lineHeight: 1.8, whiteSpace: 'pre-wrap', m: 0 }}>
+                    {zh
+                      ? 'list1[0] + merge(list1[1:], list2)  if list1[0] < list2[0]\nlist2[0] + merge(list1, list2[1:])  otherwise'
+                      : 'list1[0] + merge(list1[1:], list2)  if list1[0] < list2[0]\nlist2[0] + merge(list1, list2[1:])  otherwise'}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" sx={{ lineHeight: 1.6, fontStyle: 'italic' }}>
+                  {zh 
+                    ? '即较小的链表头节点加上对剩余元素的合并结果。'
+                    : 'Namely, the smaller of the two lists\' heads plus the result of a merge on the rest of the elements.'
+                  }
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#6b7c32' }}>
+                  {zh ? '✅ 算法' : '✅ Algorithm'}
+                </Typography>
+                <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                  {zh 
+                    ? '我们直接模拟上述递归过程，首先处理边界情况。具体来说，如果 l1 或 l2 中的任意一个最初为 null，则无需合并，直接返回非空链表即可。否则，我们确定 l1 和 l2 中哪个头节点较小，并递归地将其 next 值设置为下一次合并的结果。鉴于两个链表均以 null 结尾，递归最终会终止。'
+                    : 'We model the above recurrence directly, first accounting for edge cases. Specifically, if either of l1 or l2 is initially null, there is no merge to perform, so we simply return the non-null list. Otherwise, we determine which of l1 and l2 has a smaller head, and recursively set the next value for that head to the next merge result. Given that both lists are null-terminated, the recursion will eventually terminate.'
+                  }
+                </Typography>
+              </>
+            )}
+          </Box>
+        </Box>
+
+        {/* 水平分割线（可拖拽） */}
+        <div
+          className="lc-resizer-h"
+          ref={topResizerRef}
+          onMouseDown={() => setIsTopResizing(true)}
+          onPointerDown={(e) => { e.preventDefault(); (e.currentTarget as any).setPointerCapture?.((e as any).pointerId); setIsTopResizing(true); }}
+          onPointerUp={(e) => { (e.currentTarget as any).releasePointerCapture?.((e as any).pointerId); setIsTopResizing(false); }}
+          onTouchStart={(e) => { e.preventDefault(); setIsTopResizing(true); }}
+          onTouchEnd={() => setIsTopResizing(false)}
+          style={{ height: 8, cursor: 'row-resize', background: '#fff', width: '100%', touchAction: 'none', position: 'relative', zIndex: 1400, userSelect: 'none', boxShadow: 'inset 0 1px 0 #ddd, inset 0 -1px 0 #ddd' }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 3px)',
+              columnGap: 2,
+            }}
+          >
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: '#ccc' }} />
+            ))}
+          </div>
+        </div>
+
+        {/* 下栏：Story 步骤（内嵌，不再悬浮在画布） */}
+        <Box sx={{ flex: `1 1 ${100 - topPct}%`, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* <Box sx={{ p: 1, overflow: 'auto', flex: 1 }}>
+            {mode === 'story' ? (
+              <StoryPlayer 
+                steps={steps} 
+                onStepChange={handleStepChange} 
+                stepStatuses={stepStatuses}
+                setStepStatuses={setStepStatuses}
+                onCheck={onCheck}
+                onNextDraw={onNextDraw}
+                notes={notes}
+                isNotesOpen={isNotesOpen}
+                stepNotes={stepNotes}
+                currentStepIndex={currentStepIndex}
+                stepChecks={stepChecks}
+                containerRef={rightPaneRef}
+                titles={storyAlgorithm === 'iter' ? titles_iter : undefined}
+                hints={storyAlgorithm === 'iter' ? hints_iter : undefined}
+                isLeftPanelCollapsed={isLeftPanelCollapsed}
+                zh={zh}
+                inline
+              />
+            ) : (
+              <Box sx={{
+                border: '1px solid #e0e0e0',
+                borderRadius: 2,
+                bgcolor: '#fff',
+                boxShadow: 0,
+                p: 1.25,
+              }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                  {zh ? '探索模式' : 'Explore Mode'}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                  {zh
+                    ? '现在处于探索模式：可以按照自己的想法在右侧画布上绘制。需要时可随时点击顶部“AI 画图”和“检查步骤”。'
+                    : 'You are in Explore mode. Draw freely on the right canvas. Use "AI Draw" and "Check Step" from the top bar anytime.'}
+                </Typography>
+              </Box>
+            )}
+          </Box> */}
+        </Box>
+      </div>
+      </Box>
+      {/* 全屏透明拖拽覆盖层：仅在拖拽中启用，用于可靠捕获事件，不改变可见样式 */}
+      {(isResizing || isTopResizing || isLeftAiResizing) && (
+        <div
+          onMouseMove={(e) => {
+            if (isResizing && containerRef.current) {
+              const rect = containerRef.current.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+              setLeftPct(next);
+            } else if (isTopResizing && rightSplitRef.current) {
+              const rect = rightSplitRef.current.getBoundingClientRect();
+              const y = e.clientY - rect.top;
+              const next = Math.max(20, Math.min(80, (y / rect.height) * 100));
+              setTopPct(next);
+            } else if (isLeftAiResizing && leftColumnRef.current) {
+              const rect = leftColumnRef.current.getBoundingClientRect();
+              const newHeight = Math.round(rect.bottom - e.clientY);
+              const clamped = Math.max(80, Math.min(400, newHeight));
+              setLeftAiHeight(clamped);
+            }
+          }}
+          onPointerMove={(e) => {
+            if (isResizing && containerRef.current) {
+              const rect = containerRef.current.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+              setLeftPct(next);
+            } else if (isTopResizing && rightSplitRef.current) {
+              const rect = rightSplitRef.current.getBoundingClientRect();
+              const y = e.clientY - rect.top;
+              const next = Math.max(20, Math.min(80, (y / rect.height) * 100));
+              setTopPct(next);
+            } else if (isLeftAiResizing && leftColumnRef.current) {
+              const rect = leftColumnRef.current.getBoundingClientRect();
+              const newHeight = Math.round(rect.bottom - e.clientY);
+              const clamped = Math.max(80, Math.min(400, newHeight));
+              setLeftAiHeight(clamped);
+            }
+          }}
+          onTouchMove={(e) => {
+            const t = e.touches && e.touches[0];
+            if (!t) return;
+            if (isResizing && containerRef.current) {
+              const rect = containerRef.current.getBoundingClientRect();
+              const x = t.clientX - rect.left;
+              const next = Math.max(20, Math.min(80, (x / rect.width) * 100));
+              setLeftPct(next);
+            } else if (isTopResizing && rightSplitRef.current) {
+              const rect = rightSplitRef.current.getBoundingClientRect();
+              const y = t.clientY - rect.top;
+              const next = Math.max(20, Math.min(80, (y / rect.height) * 100));
+              setTopPct(next);
+            } else if (isLeftAiResizing && leftColumnRef.current) {
+              const rect = leftColumnRef.current.getBoundingClientRect();
+              const newHeight = Math.round(rect.bottom - t.clientY);
+              const clamped = Math.max(80, Math.min(400, newHeight));
+              setLeftAiHeight(clamped);
+            }
+            e.preventDefault();
+          }}
+          onMouseUp={() => { setIsResizing(false); setIsTopResizing(false); setIsLeftAiResizing(false); }}
+          onPointerUp={() => { setIsResizing(false); setIsTopResizing(false); setIsLeftAiResizing(false); }}
+          onTouchEnd={() => { setIsResizing(false); setIsTopResizing(false); setIsLeftAiResizing(false); }}
+          style={{ position: 'fixed', left: 0, top: 0, right: 0, bottom: 0, zIndex: 5000, cursor: (isResizing ? 'col-resize' : 'row-resize') as any, background: 'transparent', touchAction: 'none' }}
+        />
+      )}
       {/* Notes功能已集成到Story卡片中，不再需要单独的Modal */}
-    </div>
+    </main>
   );
 }

@@ -11,7 +11,6 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 interface Props {
   markdown: string;
-  onAlgorithmSelect?: (alg: 'algo1' | 'iter') => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   zh: boolean;                     // 当前语言 true=中文, false=English
@@ -37,7 +36,6 @@ export default function MarkdownWithDrawing({
   zh, 
   onToggleZh,
   markdown, 
-  onAlgorithmSelect, 
   isCollapsed = false, 
   onToggleCollapse 
 }: Props) {
@@ -214,28 +212,28 @@ export default function MarkdownWithDrawing({
   /* Markdown 渲染：给每个 <details> 加按钮 */
   const components = {
     div({ node, ...props }: any) {
-             if (props.className === 'example-slot')
-         return (
+      if (props.className === 'example-slot')
+        return (
            <Box my={isTouchDevice ? 1 : 2} textAlign="center">
-             <img
-               src="https://assets.leetcode.com/uploads/2020/10/03/merge_ex1.jpg"
-               alt="Example"
+            <img
+              src="https://assets.leetcode.com/uploads/2020/10/03/merge_ex1.jpg"
+              alt="Example"
                style={{ 
                  maxWidth: isTouchDevice ? 350 : 400, 
                  width: '100%', 
                  borderRadius: 8 
                }}
-             />
-           </Box>
-         )
+            />
+          </Box>
+        )
       if (props.className === 'merge-animation-slot')
         return (
           <Box sx={{ position: 'relative', zIndex: 20 }}>
             <MergeAnimationViewer />
           </Box>
         )
-             if (props.className === 'animation-slot')
-         return (
+      if (props.className === 'animation-slot')
+        return (
                         <Box sx={{ 
                p: isTouchDevice ? 1 : 2, 
                mt: isTouchDevice ? 1 : 2 
@@ -246,37 +244,37 @@ export default function MarkdownWithDrawing({
                  fontWeight: 600,
                  fontSize: isTouchDevice ? '1rem' : '1.25rem'
                }}>
-                 🎥 贪心算法动画演示
-               </Typography>
-             <Box sx={{ 
-               borderRadius: 1, 
-               overflow: 'hidden', 
-               border: '1px solid #e0e0e0',
-               bgcolor: 'white'
-             }}>
-               <video
-                 controls
-                 preload="metadata"
-                 playsInline
-                 muted
-                 style={{ width: '100%', height: 'auto', display: 'block' }}
-                 poster="/video-poster.jpg"
-                 onError={(e) => console.error('Video error:', e)}
-               >
-                 <source src="/videos/greed.mp4" type="video/mp4" />
+              🎥 贪心算法动画演示
+            </Typography>
+            <Box sx={{ 
+              borderRadius: 1, 
+              overflow: 'hidden', 
+              border: '1px solid #e0e0e0',
+              bgcolor: 'white'
+            }}>
+              <video
+                controls
+                preload="metadata"
+                playsInline
+                muted
+                style={{ width: '100%', height: 'auto', display: 'block' }}
+                poster="/video-poster.jpg"
+                onError={(e) => console.error('Video error:', e)}
+              >
+                <source src="/videos/greed.mp4" type="video/mp4" />
                  <source src="/videos/greed.webm" type="video/mp4" />
-                 您的浏览器不支持视频播放。
-               </video>
-             </Box>
+                您的浏览器不支持视频播放。
+              </video>
+            </Box>
              <Typography variant="body2" sx={{ 
                mt: isTouchDevice ? 0.5 : 1, 
                color: '#666', 
                fontSize: isTouchDevice ? '0.75rem' : '0.875rem' 
              }}>
-               观看贪心算法在跳跃游戏中的实际应用过程
-             </Typography>
-           </Box>
-         )
+              观看贪心算法在跳跃游戏中的实际应用过程
+            </Typography>
+          </Box>
+        )
       return <div {...props} />
     },
 
@@ -298,55 +296,29 @@ export default function MarkdownWithDrawing({
            userSelect: 'text',
            fontSize: isTouchDevice ? '0.8rem' : '1rem'
          }}>
-           <summary
-             style={{
-               cursor: 'pointer',
-               display: 'flex',
-               alignItems: 'center',
-               userSelect: 'text', // 允许文本选择
-               listStyle: 'none', // 移除默认的箭头
+          <summary
+            style={{
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              userSelect: 'text', // 允许文本选择
+              listStyle: 'none', // 移除默认的箭头
                fontSize: isTouchDevice ? '0.8rem' : '1rem'
-             }}
-           >
+            }}
+          >
             {summary}
             <Box ml="auto">
-                            <Button
+             <Button
                  size={isTouchDevice ? "small" : "small"}
-                 variant={isSelected ? 'contained' : 'outlined'}
-                 color={isSelected ? 'success' : 'primary'}
-                 onClick={(e) => {
-                   e.preventDefault()   // 阻止默认
-                   e.stopPropagation()  // 阻止冒泡到 <details>
-                   setSelectedKey(isSelected ? '' : key)
-                   setApproach(isSelected ? '' : key + '\n' + rest.map((r: any) => r?.props?.children || '').join('\n'))
-                   try {
-                     const keyText = String(key)
-                    //  if (onAlgorithmSelect) {
-                    //    if (/方法\s*1|递归/i.test(keyText)) onAlgorithmSelect('algo1')
-                    //    if (/方法\s*2|迭代/i.test(keyText)) onAlgorithmSelect('iter')
-                    //  }
-                    if (onAlgorithmSelect) {
-                      // 统一小写再比对，兼容中英
-                      const k = String(keyText).toLowerCase();
-                    
-                      const isAlgo1 =
-                        /方法\s*1/.test(k) ||
-                        /递归/.test(k) ||
-                        /method\s*1/.test(k) ||
-                        /recurs/i.test(k); // recursion / recursive
-                    
-                      const isIter =
-                        /方法\s*2/.test(k) ||
-                        /迭代/.test(k) ||
-                        /method\s*2/.test(k) ||
-                        /iterat/i.test(k); // iterate / iterative
-                    
-                      if (isAlgo1) onAlgorithmSelect('algo1');
-                      if (isIter)  onAlgorithmSelect('iter');
-                    }
-                    
-                   } catch {}
-                 }}
+              variant={isSelected ? 'contained' : 'outlined'}
+              color={isSelected ? 'success' : 'primary'}
+              onClick={(e) => {
+                e.preventDefault()   // 阻止默认
+                e.stopPropagation()  // 阻止冒泡到 <details>
+                setSelectedKey(isSelected ? '' : key)
+                setApproach(isSelected ? '' : key + '\n' + rest.map((r: any) => r?.props?.children || '').join('\n'))
+                // 算法选择功能已移除，固定使用递归方法
+              }}
                  sx={{ 
                    textTransform: 'none', 
                    fontSize: isTouchDevice ? 9 : 12,
@@ -354,9 +326,9 @@ export default function MarkdownWithDrawing({
                    px: isTouchDevice ? 0.8 : 1.5,
                    minHeight: isTouchDevice ? 24 : 32
                  }}
-               >
-                 {isSelected ? 'Selected' : 'Select'}
-               </Button>
+            >
+              {isSelected ? 'Selected' : 'Select'}
+            </Button>
             </Box>
           </summary>
           {rest}
@@ -372,36 +344,36 @@ export default function MarkdownWithDrawing({
   }
 
   return (
-    <Box position="relative" width="100%" height="100vh" bgcolor="#fafafa" sx={{ userSelect: 'text' }}>
+    <Box position="relative" width="100%" height="100%" bgcolor="#fafafa" sx={{ userSelect: 'text' }}>
       {/* 工具栏悬浮在卡片左上角 */}
-             <Box
-         position="absolute"
+      <Box
+        position="absolute"
          top={isTouchDevice ? 12 : 20}
          left={isTouchDevice ? 12 : 20}
-         zIndex={20}
-         bgcolor="rgba(255,255,255,0.8)"
-         borderRadius={1}
-         boxShadow={1}
-         display="flex"
-         alignItems="center"
+        zIndex={20}
+        bgcolor="rgba(255,255,255,0.8)"
+        borderRadius={1}
+        boxShadow={1}
+        display="flex"
+        alignItems="center"
          gap={isTouchDevice ? 0.2 : 0.5}
          px={isTouchDevice ? 0.2 : 0.5}
-       >
+      >
                  <Tooltip title="查看模式">
-           <IconButton color={mode === 'view' ? 'primary' : 'default'} onClick={() => setMode('view')}>
-             <Visibility fontSize="small" />
-           </IconButton>
-         </Tooltip>
+          <IconButton color={mode === 'view' ? 'primary' : 'default'} onClick={() => setMode('view')}>
+            <Visibility fontSize="small" />
+          </IconButton>
+        </Tooltip>
          <Tooltip title="标注模式">
-           <IconButton color={mode === 'draw' ? 'success' : 'default'} onClick={() => setMode('draw')}>
-             <Edit fontSize="small" />
-           </IconButton>
-         </Tooltip>
+          <IconButton color={mode === 'draw' ? 'success' : 'default'} onClick={() => setMode('draw')}>
+            <Edit fontSize="small" />
+          </IconButton>
+        </Tooltip>
          <Tooltip title="清空标注">
-           <IconButton color="error" onClick={handleClear}>
-             <Delete fontSize="small" />
-           </IconButton>
-         </Tooltip>
+          <IconButton color="error" onClick={handleClear}>
+            <Delete fontSize="small" />
+          </IconButton>
+        </Tooltip>
 
                           {/* 折叠按钮 - 只在面板展开时显示 */}
           {onToggleCollapse && !isCollapsed && (
@@ -436,18 +408,7 @@ export default function MarkdownWithDrawing({
           >
             左侧标注
           </Box>
-           {/* 翻译开关 */}
-  <Box sx={{ display: 'flex', alignItems: 'center', ml: 2, mr: 3 }}>
-    <Typography variant="body2" sx={{ mr: 1, color: '#666' }}>EN</Typography>
-    <Switch
-      checked={zh}
-      onChange={(_, checked) => {
-        if (checked !== zh) onToggleZh?.();
-      }}
-      size="small"
-    />
-    <Typography variant="body2" sx={{ ml: 1, color: '#666' }}>中文</Typography>
-  </Box>
+
       </Box>
       {/* <ToggleButtonGroup
         value={zh ? 'zh' : 'en'}
@@ -458,14 +419,14 @@ export default function MarkdownWithDrawing({
         <ToggleButton value="en">EN</ToggleButton>
       </ToggleButtonGroup> */}
       {/* 翻译开关 */}
-   
+
       {/* 卡片 + 画布 */}
       <Box
         ref={cardRef}
         position="relative"
         width="100%"
         height="100%"
-        overflow="auto"
+        overflow="hidden"
         p={0}
       >
                  <Box p={isTouchDevice ? 1.5 : 3} pt={isTouchDevice ? 3 : 6} sx={{ 
@@ -474,10 +435,10 @@ export default function MarkdownWithDrawing({
            fontSize: isTouchDevice ? '0.8rem' : '1rem', // iPad上字体更小
            lineHeight: isTouchDevice ? 1.3 : 1.6, // iPad上行高更紧凑
          }}>
-           <ReactMarkdown rehypePlugins={[rehypeRaw]} components={components}>
-             {injectSlots(markdown)}
-           </ReactMarkdown>
-         </Box>
+          <ReactMarkdown rehypePlugins={[rehypeRaw]} components={components}>
+            {injectSlots(markdown)}
+          </ReactMarkdown>
+        </Box>
 
         {/* 直接叠加在卡片上画线 */}
         {mode === 'draw' && (

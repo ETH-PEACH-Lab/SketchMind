@@ -1,3 +1,63 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* 全局样式 - 平板和移动端避免可视区域裁剪，允许页面纵向滚动 */
+html, body {
+  /* 使用动态视口高度，兼容 iOS Safari 地址栏伸缩 */
+  min-height: 100dvh;
+  height: -webkit-fill-available;
+  margin: 0;
+  padding: 0;
+  /* 允许出现滚动条，避免底部内容被裁切 */
+  overflow-y: auto;
+}
+
+#__next {
+  /* 让应用根节点能超过初始视口高度 */
+  min-height: 100dvh;
+  height: auto;
+  /* 允许内容根据需要滚动 */
+  overflow-y: auto;
+}
+
+/* ===== Guides Overlay Animations ===== */
+/* 抖动动画 */
+@keyframes guide-shake {
+  0%   { transform: translate(0,0) rotate(0deg); }
+  20%  { transform: translate(-1px, 1px) rotate(-0.5deg); }
+  40%  { transform: translate(1px, -1px) rotate(0.5deg); }
+  60%  { transform: translate(-1px, 0px) rotate(0deg); }
+  80%  { transform: translate(1px, 1px) rotate(0.5deg); }
+  100% { transform: translate(0,0) rotate(0deg); }
+}
+.guide-shake {
+  animation: guide-shake 0.6s linear infinite;
+  pointer-events: none;
+}
+
+/* 荧光脉冲 */
+@keyframes guide-glow {
+  0%   { opacity: 0.6; box-shadow: 0 0 6px 2px rgba(0, 200, 255, .8); }
+  50%  { opacity: 1;   box-shadow: 0 0 14px 6px rgba(0, 200, 255, 1); }
+  100% { opacity: 0.6; box-shadow: 0 0 6px 2px rgba(0, 200, 255, .8); }
+}
+.guide-glow-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00c8ff;
+  animation: guide-glow 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.guide-glow-ring {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 200, 255, .9);
+  box-shadow: 0 0 12px rgba(0, 200, 255, .9);
+  animation: guide-glow 1.2s ease-in-out infinite;
+  transform: translate(-11px, -11px);
+  pointer-events: none;
+}

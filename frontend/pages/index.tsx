@@ -2618,24 +2618,24 @@ useEffect(() => {
             <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#333' }}>SketchMind</Typography>
           </Box>
           {/* 中间操作按钮组 */}
-          <Box sx={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 2, px: 1, py: 0.5, boxShadow: 0 }}>
-            <Button
+          {/* <Box sx={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 2, px: 1, py: 0.5, boxShadow: 0 }}> */}
+            {/* <Button
               onClick={handleTopHint}
               disabled={topLoadingHint}
               sx={{ minWidth: 0, color: '#555', textTransform: 'none', '&:hover': { bgcolor: '#eeeeee' } }}
               startIcon={topLoadingHint ? <CircularProgress size={18} /> : <PlayArrow />}
             >
               {zh ? 'AI 画图' : 'AI Draw'}
-            </Button>
-            <Button
+            </Button> */}
+            {/* <Button
               onClick={handleTopCheck}
               disabled={topLoadingCheck}
               sx={{ minWidth: 0, color: 'success.main', fontWeight: 700, textTransform: 'none', '&:hover': { bgcolor: '#e8f5e9' } }}
               startIcon={topLoadingCheck ? <CircularProgress size={18} /> : <CloudUpload sx={{ color: 'success.main' }} />}
             >
               {zh ? '检查步骤' : 'Check Step'}
-            </Button>
-          </Box>
+            </Button> */}
+          {/* </Box> */}
         </Box>
       </Box>
 

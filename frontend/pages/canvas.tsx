@@ -68,7 +68,12 @@ export default function CanvasPage() {
   const numberRecognitionTimerRef = useRef<NodeJS.Timeout | null>(null); // Timer for delayed recognition
   const pendingPathsForRecognitionRef = useRef<Path[]>([]); // Paths waiting for recognition
   const [showFireworks, setShowFireworks] = useState<boolean>(false);
-  const fireworksRef = useRef<Array<{x: number; y: number; particles: Array<{x: number; y: number; vx: number; vy: number; life: number; color: string}>}>>([])
+  const fireworksRef = useRef<Array<{x: number; y: number; particles: Array<{x: number; y: number; vx: number; vy: number; life: number; color: string}>}>>([]);
+  const wrongAttemptsRef = useRef<number>(0); // Count wrong attempts
+  const lastDrawTimeRef = useRef<number>(0); // Track last draw time
+  const showHintAnimationRef = useRef<boolean>(false); // Use ref instead of state for immediate update
+  const hintAnimationProgressRef = useRef<number>(0);
+  const hintAnimationStartTimeRef = useRef<number>(0);
   // Helper: read scaffolding mode from window or localStorage
   const getScaffoldingMode = (): string | undefined => {
     try {
@@ -851,6 +856,10 @@ export default function CanvasPage() {
       numberRecognizedRef.current = false;
       userDrawnPathsRef.current = [];
       setSelectedColor(null);
+      wrongAttemptsRef.current = 0;
+      lastDrawTimeRef.current = 0;
+      showHintAnimationRef.current = false;
+      hintAnimationProgressRef.current = 0;
       
       // Start guide animation for the second merged node
       const { originX, originY, nodeW, nodeH, gapX, gapY } = initLayoutRef.current!;
@@ -912,6 +921,10 @@ export default function CanvasPage() {
       numberRecognizedRef.current = false;
       userDrawnPathsRef.current = [];
       setSelectedColor(null);
+      wrongAttemptsRef.current = 0;
+      lastDrawTimeRef.current = 0;
+      showHintAnimationRef.current = false;
+      hintAnimationProgressRef.current = 0;
       
       // Start guide animation for the third merged node
       const { originX, originY, nodeW, nodeH, gapX, gapY } = initLayoutRef.current!;
@@ -973,6 +986,10 @@ export default function CanvasPage() {
       numberRecognizedRef.current = false;
       userDrawnPathsRef.current = [];
       setSelectedColor(null);
+      wrongAttemptsRef.current = 0;
+      lastDrawTimeRef.current = 0;
+      showHintAnimationRef.current = false;
+      hintAnimationProgressRef.current = 0;
       
       // Start guide animation for the fourth merged node
       const { originX, originY, nodeW, nodeH, gapX, gapY } = initLayoutRef.current!;
@@ -1034,6 +1051,10 @@ export default function CanvasPage() {
       numberRecognizedRef.current = false;
       userDrawnPathsRef.current = [];
       setSelectedColor(null);
+      wrongAttemptsRef.current = 0;
+      lastDrawTimeRef.current = 0;
+      showHintAnimationRef.current = false;
+      hintAnimationProgressRef.current = 0;
       
       // Start guide animation for the fifth merged node
       const { originX, originY, nodeW, nodeH, gapX, gapY } = initLayoutRef.current!;
@@ -1094,6 +1115,10 @@ export default function CanvasPage() {
       numberRecognizedRef.current = false;
       userDrawnPathsRef.current = [];
       setSelectedColor(null);
+      wrongAttemptsRef.current = 0;
+      lastDrawTimeRef.current = 0;
+      showHintAnimationRef.current = false;
+      hintAnimationProgressRef.current = 0;
       
       // Start guide animation for the sixth merged node
       const { originX, originY, nodeW, nodeH, gapX, gapY } = initLayoutRef.current!;
@@ -1672,6 +1697,9 @@ export default function CanvasPage() {
             pendingPathsForRecognitionRef.current.push(finished);
             userDrawnPathsRef.current.push(finished.id);
             
+            // Update last draw time
+            lastDrawTimeRef.current = animTimeRef.current;
+            
             // Clear any existing timer
             if (numberRecognitionTimerRef.current) {
               clearTimeout(numberRecognitionTimerRef.current);
@@ -1725,8 +1753,14 @@ export default function CanvasPage() {
                 
                 // Clear pending paths
                 pendingPathsForRecognitionRef.current = [];
+                // Reset wrong attempts on success
+                wrongAttemptsRef.current = 0;
+                lastDrawTimeRef.current = 0;
               } else {
                 // Wrong number - show error and allow retry
+                wrongAttemptsRef.current++;
+                console.log(`Wrong attempt ${wrongAttemptsRef.current}/5`);
+                
                 setShowErrorHighlight(true);
                 errorHighlightStartRef.current = animTimeRef.current;
                 
@@ -1862,7 +1896,38 @@ export default function CanvasPage() {
     if (showNumberHint && userCreatedRectIdRef.current) {
       const createdRect = drawShapes.find(s => s.id === userCreatedRectIdRef.current);
       if (createdRect) {
-        drawNumberHint(ctx, createdRect, animTimeRef.current - numberHintStartTimeRef.current);
+        // Check if should show hint animation
+        const timeSinceQuestionMark = animTimeRef.current - numberHintStartTimeRef.current;
+        const timeSinceLastDraw = animTimeRef.current - lastDrawTimeRef.current;
+        
+        console.log('Debug: timeSinceQuestionMark=', timeSinceQuestionMark, 'wrongAttempts=', wrongAttemptsRef.current, 'showHintAnimation=', showHintAnimationRef.current);
+        
+        // Trigger hint animation if:
+        // 1. User made 3 wrong attempts
+        // 2. Question mark has been showing for 1 second without any drawing
+        // 3. User drew something but stopped for 10 seconds
+        const shouldShowHint = wrongAttemptsRef.current >= 3 || 
+                               timeSinceQuestionMark > 5000 ||
+                               (lastDrawTimeRef.current > 0 && timeSinceLastDraw > 10000);
+        
+        if (shouldShowHint && !showHintAnimationRef.current) {
+          console.log('Triggering hint animation! Reason:', 
+            wrongAttemptsRef.current >= 3 ? 'after 3 wrong attempts' : 
+            timeSinceQuestionMark > 5000 ? 'after 1s of question mark' : 'after 10s idle');
+          showHintAnimationRef.current = true;
+          hintAnimationStartTimeRef.current = animTimeRef.current;
+          hintAnimationProgressRef.current = 0;
+        }
+        
+        if (showHintAnimationRef.current) {
+          console.log('Drawing hint animation, elapsed=', animTimeRef.current - hintAnimationStartTimeRef.current);
+          drawHintNumberAnimation(ctx, createdRect, animTimeRef.current - hintAnimationStartTimeRef.current);
+        } else {
+          // Only draw question mark if it hasn't been too long (within 1.5 seconds)
+          if (timeSinceQuestionMark < 1500) {
+            drawNumberHint(ctx, createdRect, animTimeRef.current - numberHintStartTimeRef.current);
+          }
+        }
       }
     }
     
@@ -2348,27 +2413,173 @@ export default function CanvasPage() {
     const cx = rect.x + rect.w / 2;
     const cy = rect.y + rect.h / 2;
     
-    // Fade in over 500ms
-    const fadeIn = Math.min(1, elapsed / 500);
+    // Question mark stays for 1 second then fades out
+    const stayDuration = 1000; // 1 second
+    const fadeDuration = 500; // 500ms fade out
+    
+    let alpha = 1;
+    if (elapsed < 500) {
+      // Fade in over 500ms
+      alpha = elapsed / 500;
+    } else if (elapsed > stayDuration) {
+      // Fade out after 3 seconds
+      const fadeProgress = (elapsed - stayDuration) / fadeDuration;
+      alpha = Math.max(0, 1 - fadeProgress);
+    }
+    
+    // Don't draw if fully faded out
+    if (alpha <= 0) return;
+    
     // Pulsing effect
     const pulse = 0.8 + 0.2 * Math.sin(elapsed / 300);
     
     ctx.save();
-    ctx.globalAlpha = fadeIn * pulse;
+    ctx.globalAlpha = alpha * pulse;
     
     // Draw question mark
     ctx.font = 'bold 24px "Comic Sans MS", "Segoe UI", ui-sans-serif';
-    ctx.fillStyle = '#3b82f6'; // Blue color
+    ctx.fillStyle = '#1e1e1e'; // Black color
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('?', cx, cy);
     
     // Draw subtle glow
-    ctx.shadowColor = 'rgba(59, 130, 246, 0.5)';
+    ctx.shadowColor = 'rgba(30, 30, 30, 0.5)';
     ctx.shadowBlur = 8;
     ctx.fillText('?', cx, cy);
     
     ctx.restore();
+  };
+
+  const drawHintNumberAnimation = (ctx: CanvasRenderingContext2D, rect: Shape, elapsed: number) => {
+    // Determine which number to show based on current step
+    let expectedNumber = 1;
+    if (mergeStepRef.current === 0 || mergeStepRef.current === 1) {
+      expectedNumber = 1;
+    } else if (mergeStepRef.current === 2) {
+      expectedNumber = 2;
+    } else if (mergeStepRef.current === 3) {
+      expectedNumber = 3;
+    } else if (mergeStepRef.current === 4 || mergeStepRef.current === 5) {
+      expectedNumber = 4;
+    }
+    
+    // Animation duration: 2 seconds
+    const duration = 2000;
+    const progress = Math.min(1, elapsed / duration);
+    
+    // Define handwritten paths for each number
+    const getNumberPath = (num: number): Array<{x: number; y: number}> => {
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      const size = Math.min(rect.w, rect.h) * 0.5;
+      
+      if (num === 1) {
+        return [
+          {x: cx - size * 0.1, y: cy - size * 0.8},
+          {x: cx, y: cy - size * 0.9},
+          {x: cx, y: cy - size * 0.6},
+          {x: cx, y: cy - size * 0.3},
+          {x: cx, y: cy},
+          {x: cx, y: cy + size * 0.3},
+          {x: cx, y: cy + size * 0.6},
+          {x: cx, y: cy + size * 0.9}
+        ];
+      } else if (num === 2) {
+        return [
+          {x: cx - size * 0.5, y: cy - size * 0.7},
+          {x: cx - size * 0.3, y: cy - size * 0.9},
+          {x: cx, y: cy - size * 0.95},
+          {x: cx + size * 0.3, y: cy - size * 0.9},
+          {x: cx + size * 0.5, y: cy - size * 0.7},
+          {x: cx + size * 0.4, y: cy - size * 0.4},
+          {x: cx + size * 0.2, y: cy - size * 0.1},
+          {x: cx, y: cy + size * 0.2},
+          {x: cx - size * 0.2, y: cy + size * 0.5},
+          {x: cx - size * 0.4, y: cy + size * 0.7},
+          {x: cx - size * 0.5, y: cy + size * 0.9},
+          {x: cx - size * 0.2, y: cy + size * 0.95},
+          {x: cx, y: cy + size * 0.95},
+          {x: cx + size * 0.2, y: cy + size * 0.95},
+          {x: cx + size * 0.4, y: cy + size * 0.95},
+          {x: cx + size * 0.5, y: cy + size * 0.9}
+        ];
+      } else if (num === 3) {
+        return [
+          {x: cx - size * 0.5, y: cy - size * 0.7},
+          {x: cx - size * 0.3, y: cy - size * 0.9},
+          {x: cx, y: cy - size * 0.95},
+          {x: cx + size * 0.3, y: cy - size * 0.9},
+          {x: cx + size * 0.5, y: cy - size * 0.7},
+          {x: cx + size * 0.3, y: cy - size * 0.4},
+          {x: cx, y: cy - size * 0.2},
+          {x: cx + size * 0.2, y: cy},
+          {x: cx + size * 0.4, y: cy + size * 0.2},
+          {x: cx + size * 0.5, y: cy + size * 0.5},
+          {x: cx + size * 0.5, y: cy + size * 0.7},
+          {x: cx + size * 0.3, y: cy + size * 0.9},
+          {x: cx, y: cy + size * 0.95},
+          {x: cx - size * 0.3, y: cy + size * 0.9},
+          {x: cx - size * 0.5, y: cy + size * 0.7}
+        ];
+      } else if (num === 4) {
+        return [
+          {x: cx + size * 0.3, y: cy - size * 0.9},
+          {x: cx + size * 0.3, y: cy - size * 0.6},
+          {x: cx + size * 0.3, y: cy - size * 0.3},
+          {x: cx + size * 0.3, y: cy},
+          {x: cx + size * 0.3, y: cy + size * 0.3},
+          {x: cx + size * 0.3, y: cy + size * 0.6},
+          {x: cx + size * 0.3, y: cy + size * 0.9},
+          {x: cx + size * 0.3, y: cy},
+          {x: cx, y: cy},
+          {x: cx - size * 0.3, y: cy},
+          {x: cx - size * 0.5, y: cy},
+          {x: cx - size * 0.4, y: cy - size * 0.3},
+          {x: cx - size * 0.2, y: cy - size * 0.6},
+          {x: cx, y: cy - size * 0.8},
+          {x: cx + size * 0.2, y: cy - size * 0.9},
+          {x: cx + size * 0.3, y: cy - size * 0.9}
+        ];
+      }
+      return [];
+    };
+    
+    const path = getNumberPath(expectedNumber);
+    const pointsToShow = Math.floor(path.length * progress);
+    
+    if (pointsToShow < 2) return;
+    
+    ctx.save();
+    ctx.strokeStyle = '#1e1e1e'; // Black color
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    // Draw the animated path
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < pointsToShow; i++) {
+      ctx.lineTo(path[i].x, path[i].y);
+    }
+    
+    // If we're partway through a segment, interpolate
+    if (pointsToShow < path.length) {
+      const t = (path.length * progress) - pointsToShow;
+      const p1 = path[pointsToShow - 1];
+      const p2 = path[pointsToShow];
+      const x = p1.x + (p2.x - p1.x) * t;
+      const y = p1.y + (p2.y - p1.y) * t;
+      ctx.lineTo(x, y);
+    }
+    
+    ctx.stroke();
+    ctx.restore();
+    
+    // Loop the animation
+    if (progress >= 1) {
+      hintAnimationStartTimeRef.current = animTimeRef.current;
+    }
   };
 
   const drawGuideHighlighter = (ctx: CanvasRenderingContext2D, node: Shape, progress: number) => {
@@ -2590,7 +2801,7 @@ export default function CanvasPage() {
             )}
           </div>
 
-          <div style={{ position: 'relative' }}>
+          {/* <div style={{ position: 'relative' }}>
             <button onClick={() => { setTool('line'); setLinesMenuOpen(v=>!v); }}
               title="线段"
               style={{ ...iconBtnStyle, background: tool==='line'? '#e0f2ff': undefined }}>
@@ -2614,9 +2825,9 @@ export default function CanvasPage() {
                 </button>
               </div>
             )}
-          </div>
+          </div> */}
           {/* Text tool */}
-          <button onClick={() => { setTool('text'); setShapesMenuOpen(false); setLinesMenuOpen(false); }}
+          {/* <button onClick={() => { setTool('text'); setShapesMenuOpen(false); setLinesMenuOpen(false); }}
             title="文字"
             style={{ ...iconBtnStyle, background: tool==='text'? '#e0f2ff': undefined }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2624,7 +2835,7 @@ export default function CanvasPage() {
               <path d="M12 6v12"/>
               <path d="M6 18h12" strokeDasharray="3 3"/>
             </svg>
-          </button>
+          </button> */}
           {/* Eraser tool */}
           <button onClick={() => { setTool('eraser'); setShapesMenuOpen(false); setLinesMenuOpen(false); }}
             title="橡皮擦（删除整块）"
